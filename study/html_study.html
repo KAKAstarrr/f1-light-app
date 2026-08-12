@@ -1,0 +1,75 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>study</title>
+        <style>
+            /*css*/
+            p {
+                color: brown;
+                font-size: larger;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>一级</h1>
+        <h2></h2>
+        <h3></h3>
+        <h4></h4>
+        <p>感受css</p>
+        <img src="./vote_pie.png" alt="图片加载失败" title="投票结果" width="" height="">
+        <ul>
+            <li>1</li>
+            <li>2</li>
+        </ul>
+        <ol>
+            <li>5</li>
+            <li>6</li>
+        </ol>
+        <dl>
+            <dt>center</dt>
+            <dd>申请</dd>
+        </dl>
+        <table border="1"> 
+            <thead>
+                <tr>
+                    <th>shujumian</th>
+                    <th>ban</th>
+                </tr>                
+            </thead>
+            <tbody>
+                <tr>
+                    <td>haixin</td>
+                </tr>                
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td>ok</td>
+                </tr>
+            </tfoot>
+        </table>
+        <label><input type=""></label>
+        <div id="app">
+            <h1>{{message}}</h1>
+            <h1>{{count}}</h1>
+        </div>
+        <div>div标签</div>
+        <span>spanbiaoqian</span>        
+        <span>spanbiaoqian</span>
+        <script type="module">
+            import {createApp} from  'https://unpkg.com/vue@3/dist/vue.esm-browser.js'
+            createApp({
+                data() {
+                    return {
+                        message:'helllloooo',
+                        count:100
+                    }
+                }
+
+            }).mount('#app');
+
+
+        </script>
+    </body>
+    </html>

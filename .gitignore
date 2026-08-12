@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache data (不提交缓存数据 — 含 .ff1pkl/.json/.sqlite/.db)
+cache/
+
+# ML model files (体积大，不提交)
+ml/models/*.joblib
+ml/models/*.json
+ml/models/*.pkl
+
+# Environment
+.env
+.env.local
+
+# WorkBuddy internal
+.workbuddy/
+
+# Build output
+frontend/dist/

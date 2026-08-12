@@ -1,0 +1,28 @@
+# F1 Light App Python 依赖
+# 用法：pip install -r requirements.txt
+
+# --- Web 框架 ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+requests==2.32.3
+
+# --- 数据库 ---
+SQLAlchemy==2.0.35
+
+# --- 鉴权 ---
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.0
+
+# --- 数据分析 ---
+numpy>=1.26.0
+pandas>=2.2.0
+matplotlib>=3.9.0
+
+# --- F1 数据 ---
+fastf1==3.8.3
+
+# --- 可选 ---
+# streamlit>=1.38.0  # 快速原型看板
+# scikit-learn>=1.5.0  # AI 预测（阶段 3B XGBoost）
+# xgboost>=2.1.0  # AI 预测模型
+# shap>=0.46.0  # 特征重要性分析

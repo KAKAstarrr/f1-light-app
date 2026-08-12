@@ -1,0 +1,436 @@
+/**
+ * F1 数据平台 — 全站暗色主题
+ * 对标 GP Tempo 视觉风格：深色背景 + F1 品牌红 + 高对比度
+ */
+
+/* ========== CSS 变量：F1 品牌色板 ========== */
+:root {
+  /* 主色调 */
+  --f1-red: #e10600;
+  --f1-red-light: #ff3333;
+  --f1-red-dark: #b00400;
+
+  /* 暗色背景层级 */
+  --f1-bg-darkest: #0a0a0a;
+  --f1-bg-dark: #111111;
+  --f1-bg-card: #1a1a1a;
+  --f1-bg-elevated: #242424;
+  --f1-bg-hover: #2a2a2a;
+
+  /* 文字 */
+  --f1-text-primary: #ffffff;
+  --f1-text-secondary: #b0b0b0;
+  --f1-text-muted: #707070;
+
+  /* 边框 */
+  --f1-border: #333333;
+  --f1-border-light: #404040;
+
+  /* 强调色 */
+  --f1-accent: #e10600;
+  --f1-success: #00d97e;
+  --f1-warning: #ffb020;
+  --f1-info: #00a19b;
+
+  /* 车队色 */
+  --team-red-bull: #3671C6;
+  --team-ferrari: #E8002D;
+  --team-mercedes: #27F4D2;
+  --team-mclaren: #FF8000;
+  --team-alpine: #0093CC;
+  --team-aston: #229971;
+  --team-williams: #64C4FF;
+  --team-rb: #6692FF;
+  --team-sauber: #52E252;
+  --team-haas: #B6BABD;
+}
+
+/* ========== 全局暗色背景 ========== */
+html, body, #app {
+  background: var(--f1-bg-darkest) !important;
+  color: var(--f1-text-primary) !important;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* 等宽字体用于数字 */
+.mono, .num {
+  font-family: 'JetBrains Mono', 'Roboto Mono', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========== Element Plus 暗色覆盖 ========== */
+
+/* Header */
+.el-header {
+  background: var(--f1-bg-dark) !important;
+  border-bottom: 1px solid var(--f1-border) !important;
+}
+
+/* 侧边栏 */
+.el-aside {
+  background: var(--f1-bg-dark) !important;
+  border-right: 1px solid var(--f1-border) !important;
+}
+
+/* 主内容区 */
+.el-main {
+  background: var(--f1-bg-darkest) !important;
+  color: var(--f1-text-primary) !important;
+}
+
+/* 卡片 */
+.el-card {
+  background: var(--f1-bg-card) !important;
+  border: 1px solid var(--f1-border) !important;
+  color: var(--f1-text-primary) !important;
+}
+
+.el-card__header {
+  border-bottom: 1px solid var(--f1-border) !important;
+}
+
+/* 表格 */
+.el-table {
+  background: var(--f1-bg-card) !important;
+  color: var(--f1-text-primary) !important;
+  border: 1px solid var(--f1-border) !important;
+}
+
+.el-table tr,
+.el-table td,
+.el-table th.el-table__cell {
+  background: var(--f1-bg-card) !important;
+  border-bottom: 1px solid var(--f1-border) !important;
+  color: var(--f1-text-primary) !important;
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: var(--f1-bg-elevated) !important;
+}
+
+.el-table__body tr:hover > td.el-table__cell {
+  background: var(--f1-bg-hover) !important;
+}
+
+.el-table--border .el-table__cell {
+  border-right: 1px solid var(--f1-border) !important;
+}
+
+/* 表单 */
+.el-input__wrapper,
+.el-textarea__inner {
+  background: var(--f1-bg-elevated) !important;
+  box-shadow: 0 0 0 1px var(--f1-border) inset !important;
+}
+
+.el-input__inner {
+  color: var(--f1-text-primary) !important;
+}
+
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--f1-border-light) inset !important;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--f1-red) inset !important;
+}
+
+/* Select 下拉 */
+.el-select__popper.el-popper,
+.el-popper.is-light {
+  background: var(--f1-bg-elevated) !important;
+  border: 1px solid var(--f1-border) !important;
+}
+
+.el-select-dropdown__item {
+  color: var(--f1-text-primary) !important;
+}
+
+.el-select-dropdown__item.hover,
+.el-select-dropdown__item:hover {
+  background: var(--f1-bg-hover) !important;
+}
+
+.el-select-dropdown__item.selected {
+  color: var(--f1-red) !important;
+}
+
+/* Tabs */
+.el-tabs__item {
+  color: var(--f1-text-secondary) !important;
+}
+
+.el-tabs__item.is-active {
+  color: var(--f1-red) !important;
+}
+
+.el-tabs__active-line {
+  background-color: var(--f1-red) !important;
+}
+
+.el-tabs__nav-wrap::after {
+  background-color: var(--f1-border) !important;
+}
+
+.el-tabs__header {
+  margin: 0 0 16px 0 !important;
+}
+
+/* Tag */
+.el-tag {
+  border: none !important;
+}
+
+/* Button */
+.el-button--primary {
+  background: var(--f1-red) !important;
+  border-color: var(--f1-red) !important;
+}
+
+.el-button--primary:hover {
+  background: var(--f1-red-light) !important;
+  border-color: var(--f1-red-light) !important;
+}
+
+.el-button--default {
+  background: var(--f1-bg-elevated) !important;
+  border-color: var(--f1-border) !important;
+  color: var(--f1-text-primary) !important;
+}
+
+.el-button--default:hover {
+  background: var(--f1-bg-hover) !important;
+  border-color: var(--f1-border-light) !important;
+  color: var(--f1-red) !important;
+}
+
+/* Menu */
+.el-menu {
+  background: var(--f1-bg-dark) !important;
+  border-right: 1px solid var(--f1-border) !important;
+}
+
+.el-menu-item,
+.el-sub-menu__title {
+  color: var(--f1-text-secondary) !important;
+}
+
+.el-menu-item:hover,
+.el-sub-menu__title:hover {
+  background: var(--f1-bg-hover) !important;
+  color: var(--f1-text-primary) !important;
+}
+
+.el-menu-item.is-active {
+  color: var(--f1-red) !important;
+  background: rgba(225, 6, 0, 0.1) !important;
+}
+
+/* Loading */
+.el-loading-mask {
+  background: rgba(10, 10, 10, 0.8) !important;
+}
+
+/* Empty */
+.el-empty__description p {
+  color: var(--f1-text-secondary) !important;
+}
+
+/* Alert */
+.el-alert--info {
+  background: var(--f1-bg-elevated) !important;
+  border: 1px solid var(--f1-border) !important;
+}
+
+.el-alert .el-alert__content {
+  color: var(--f1-text-primary) !important;
+}
+
+/* Tooltip */
+.el-popper.is-dark {
+  background: var(--f1-bg-elevated) !important;
+  color: var(--f1-text-primary) !important;
+  border: 1px solid var(--f1-border) !important;
+}
+
+/* Pagination */
+.el-pagination .btn-prev,
+.el-pagination .btn-next,
+.el-pagination .el-pager li {
+  background: var(--f1-bg-elevated) !important;
+  color: var(--f1-text-primary) !important;
+}
+
+.el-pagination .el-pager li.is-active {
+  background: var(--f1-red) !important;
+  color: #fff !important;
+}
+
+/* Descriptions */
+.el-descriptions__body {
+  background: var(--f1-bg-card) !important;
+}
+
+.el-descriptions__label,
+.el-descriptions__content {
+  background: var(--f1-bg-card) !important;
+  color: var(--f1-text-primary) !important;
+  border-color: var(--f1-border) !important;
+}
+
+/* Radio */
+.el-radio__label {
+  color: var(--f1-text-primary) !important;
+}
+
+.el-radio__input.is-checked .el-radio__inner {
+  background: var(--f1-red) !important;
+  border-color: var(--f1-red) !important;
+}
+
+.el-radio__input.is-checked + .el-radio__label {
+  color: var(--f1-red) !important;
+}
+
+/* Checkbox */
+.el-checkbox__label {
+  color: var(--f1-text-primary) !important;
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background: var(--f1-red) !important;
+  border-color: var(--f1-red) !important;
+}
+
+/* Switch */
+.el-switch.is-checked .el-switch__core {
+  background: var(--f1-red) !important;
+  border-color: var(--f1-red) !important;
+}
+
+/* Divider */
+.el-divider {
+  border-color: var(--f1-border) !important;
+}
+
+.el-divider__text {
+  background: var(--f1-bg-card) !important;
+  color: var(--f1-text-secondary) !important;
+}
+
+/* Drawer */
+.el-drawer {
+  background: var(--f1-bg-dark) !important;
+  color: var(--f1-text-primary) !important;
+}
+
+/* Dialog */
+.el-dialog {
+  background: var(--f1-bg-dark) !important;
+}
+
+.el-dialog__title,
+.el-dialog__body {
+  color: var(--f1-text-primary) !important;
+}
+
+/* Progress */
+.el-progress-bar__outer {
+  background: var(--f1-bg-elevated) !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--f1-bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--f1-border-light);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--f1-text-muted);
+}
+
+/* ========== 通用工具类 ========== */
+.f1-card {
+  background: var(--f1-bg-card);
+  border: 1px solid var(--f1-border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.f1-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--f1-text-primary);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.f1-text-secondary {
+  color: var(--f1-text-secondary);
+}
+
+.f1-text-muted {
+  color: var(--f1-text-muted);
+}
+
+.f1-accent {
+  color: var(--f1-red);
+}
+
+.f1-page-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--f1-text-primary);
+  margin: 0;
+}
+
+.f1-section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--f1-text-primary);
+  margin: 0 0 16px 0;
+}
+
+/* GP Tempo 风格：锁定标签 */
+.lock-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.lock-bar.upcoming {
+  background: rgba(0, 209, 126, 0.15);
+  color: var(--f1-success);
+  border: 1px solid rgba(0, 209, 126, 0.3);
+}
+
+.lock-bar.ongoing {
+  background: rgba(225, 6, 0, 0.15);
+  color: var(--f1-red);
+  border: 1px solid rgba(225, 6, 0, 0.3);
+}
+
+/* 动画 */
+@keyframes f1-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: f1-fade-in 0.3s ease-out;
+}

@@ -238,6 +238,15 @@ const loginForm = ref({ username: '', password: '' })
 const regForm = ref({ username: '', email: '', password: '' })
 
 const doLogin = async () => {
+  // 前端校验：避免空表单打后端（后端会返回 422）
+  if (!loginForm.value.username.trim()) {
+    ElMessage.error('请输入用户名或邮箱')
+    return
+  }
+  if (!loginForm.value.password) {
+    ElMessage.error('请输入密码')
+    return
+  }
   authLoading.value = true
   try {
     const res = await authApi.login(loginForm.value)
@@ -250,6 +259,19 @@ const doLogin = async () => {
 }
 
 const doRegister = async () => {
+  // 前端校验：与后端 UserRegister schema 规则保持一致，避免 422
+  if (!regForm.value.username || regForm.value.username.trim().length < 3) {
+    ElMessage.error('用户名至少 3 位')
+    return
+  }
+  if (!regForm.value.email || !regForm.value.email.includes('@') || !regForm.value.email.includes('.')) {
+    ElMessage.error('请输入正确的邮箱地址')
+    return
+  }
+  if (!regForm.value.password || regForm.value.password.length < 6) {
+    ElMessage.error('密码至少 6 位')
+    return
+  }
   authLoading.value = true
   try {
     const res = await authApi.register(regForm.value)

@@ -12,7 +12,7 @@ database.py — 数据库连接管理
     3. Base：所有 ORM 模型的基类，继承它就能自动建表
     4. get_db()：FastAPI 依赖注入函数，路由用 Depends(get_db) 获取数据库会话
 """
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 from backend.config import settings
@@ -57,3 +57,50 @@ def init_db():
     # 必须先 import models，让 SQLAlchemy 知道所有表定义
     from backend import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    _auto_migrate()
+
+
+def _auto_migrate():
+    """轻量 schema 迁移：对比 ORM 模型与数据库实际列，自动补缺失列。
+
+    为什么需要它？
+        SQLite 的 create_all 只会建"不存在的表"，不会给已存在的表加新列。
+        如果 models.py 新增了字段（如 User.chip_limitless_used），旧数据库
+        会报 "no such column" 导致接口 500。
+
+    原理：
+        PRAGMA table_info 拿到实际列 → 与 ORM 模型列对比 → 缺什么补什么。
+        只加列、不删列、不改类型，保证向后兼容、不丢数据。
+
+    适合开发阶段；生产环境建议升级到 Alembic 做正式迁移。
+    """
+    from backend import models  # noqa: F401
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in existing_tables:
+            continue  # 新表已由 create_all 创建，无需处理
+        existing_cols = {col["name"] for col in inspector.get_columns(table_name)}
+        missing = [col for col in table.columns if col.name not in existing_cols]
+        if not missing:
+            continue
+
+        with engine.begin() as conn:
+            for col in missing:
+                col_type = col.type.compile(dialect=engine.dialect)
+                default_sql = ""
+                if col.default is not None:
+                    # 数值/字符串默认值直接拼 SQL；callable 默认值跳过
+                    arg = col.default.arg
+                    if isinstance(arg, (int, float, str, bool)):
+                        if isinstance(arg, str):
+                            default_sql = f" DEFAULT '{arg}'"
+                        elif isinstance(arg, bool):
+                            default_sql = f" DEFAULT {int(arg)}"
+                        else:
+                            default_sql = f" DEFAULT {arg}"
+                ddl = f'ALTER TABLE "{table_name}" ADD COLUMN "{col.name}" {col_type}{default_sql}'
+                conn.execute(text(ddl))
+                print(f"[migrate] 补列 {table_name}.{col.name} {col_type}")

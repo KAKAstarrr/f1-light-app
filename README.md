@@ -261,6 +261,13 @@ f1_light_app/
 16. **SQLAlchemy Column default 取值**：`models.Vote.__table__.c.voted_at.default.arg` 返回函数对象而非时间值，应直接用 `datetime.utcnow()`。
 17. **Vue 3 变量名拼写不一致**：`captianCode`（错）vs `captainCode`（对），template 和 script 不关联。
 
+### 2026-08-12 全项目体检修复
+18. **SQLite `create_all` 不给已存在表加新列**：给 `User` 表新增芯片字段后登录报 `no such column: users.chip_limitless_used` → 500。修复：`database.py` 新增 `_auto_migrate()`，启动时用 `PRAGMA table_info` 对比 ORM 模型与库表，自动 `ALTER TABLE` 补缺失列（保留数据）。以后加字段无需手动迁移。
+19. **Vue Router 空路径子路由 redirect 无限循环**：`children: [{ path: '', redirect: '/race-center?tab=overview' }]` 导致 `/race-center` 反复重定向 → `Maximum call stack size exceeded`。修复：删除 children，组件内部用 `route.query.tab || 'default'` 处理默认 Tab。
+20. **Vue Router 4 的 `next()` 已废弃**：`beforeEach((to, from, next) => next())` 触发 `VUE_ROUTER_R0025` 警告。修复：守卫函数改为直接返回值（`return false` / `return '/login'` / 不返回 = 放行）。
+21. **Element Plus `el-checkbox` 的 `:label` 作 value 已废弃**：触发 `ElementPlusError` 警告，升级后无法选中。修复：`:label="y"` → `:value="y"`。
+22. **FastF1 遥测首次加载超时**：首次需从 F1 官网下载 50-100MB 原始数据，60s 不够。修复：遥测接口 timeout 提升到 120s，拦截器对遥测超时给出专属提示（第二次请求走缓存秒回）。
+
 ---
 
 ## 八、环境与启动

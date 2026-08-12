@@ -9,9 +9,6 @@ const routes = [
     name: 'race-center',
     component: () => import('@/pages/RaceCenter.vue'),
     meta: { title: '赛事数据中心' },
-    children: [
-      { path: '', redirect: '/race-center?tab=overview' },
-    ],
   },
 
   // 2. 遥测分析
@@ -84,10 +81,10 @@ const router = createRouter({
   },
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach((to) => {
   const base = 'F1 数据平台'
   document.title = to.meta.title ? `${to.meta.title} - ${base}` : base
-  next()
+  // 不返回任何值 = 放行（Vue Router 4 不再推荐 next() 回调）
 })
 
 export default router

@@ -12,7 +12,7 @@
       <div v-else>
         <div class="year-tabs">
           <el-checkbox-group v-model="selectedYears" @change="loadCompare">
-            <el-checkbox v-for="y in availableYears" :key="y" :label="y">{{ y }}</el-checkbox>
+            <el-checkbox v-for="y in availableYears" :key="y" :value="y">{{ y }}</el-checkbox>
           </el-checkbox-group>
         </div>
 

@@ -73,7 +73,12 @@ service.interceptors.response.use(
     }
     // HTTP 层错误（4xx/5xx/超时/断网）
     if (error.code === 'ECONNABORTED') {
-      ElMessage.error('请求超时，请稍后重试')
+      // 遥测类接口数据量大（50-100MB 原始数据），给出针对性提示
+      const url = error.config?.url || ''
+      const isHeavy = url.includes('/telemetry') || url.includes('/speed-overlay') || url.includes('/track-map')
+      ElMessage.error(isHeavy
+        ? '遥测数据量较大，加载超时。请稍后重试（第二次会走缓存，快很多）'
+        : '请求超时，请稍后重试')
     } else if (error.response) {
       const status = error.response.status
       const detail = error.response.data?.detail || '服务器异常'

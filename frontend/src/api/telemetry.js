@@ -39,7 +39,7 @@ export const getTelemetryCompare = (params) => {
       channels: params.channels,
       session_type: params.sessionType || 'R'
     },
-    timeout: 60000  // FastF1 遥测首次加载可能需要 30-60s
+    timeout: 120000  // FastF1 遥测首次加载需下载 50-100MB 原始数据，给足 120s
   })
 }
 
@@ -80,7 +80,7 @@ export const getSpeedOverlay = (params) => {
       drivers: params.drivers,
       session_type: params.sessionType || 'R'
     },
-    timeout: 60000
+    timeout: 120000
   })
 }
 
@@ -94,7 +94,7 @@ export const getSpeedOverlay = (params) => {
 export const getTrackMap = (year, round, session = 'R') => {
   return request.get(`/api/fastf1/${year}/${round}/track-map`, {
     params: { session_type: session },
-    timeout: 60000
+    timeout: 120000
   })
 }
 

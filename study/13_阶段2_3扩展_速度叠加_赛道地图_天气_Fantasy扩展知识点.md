@@ -189,6 +189,112 @@ for (let i = 0; i < 3; i++) {
 | 坐标方向反了 | 原始坐标系可能翻转 | 可用 `100 - y` 翻转 Y 轴 |
 | SVG 不显示 | viewBox 与坐标范围不匹配 | 归一化到 0-100 + `preserveAspectRatio` |
 
+### 2.6 赛道 30 段分段最快车手染色（GP Tempo 风格）
+
+> **2026-08-14 新增**：在 B2 telemetry 接口中扩展，直接返回 `track_points` + `corner_segments`，前端 TrackLayer 用 ECharts 分段渲染。
+
+#### 2.6.1 与 B5 三段着色的区别
+
+| 特性 | B5 三段着色（Sector） | 2.6 三十段染色（Corner Segment） |
+|------|----------------------|-------------------------------|
+| 分段数 | 3（Sector 1/2/3） | 30（等分整圈） |
+| 最快判定 | Sector 计时快慢 | 各段平均速度 |
+| 数据来源 | `session.get_circuit_info()` | `fastest.get_pos_data()` + `get_car_data()` |
+| 颜色规则 | Purple/Green/Yellow | 该段最快车手的车队色 |
+| 渲染方式 | SVG `<polyline>` | ECharts 多 series `type:'line'` |
+| 接口 | `/track-map` 独立接口 | `/telemetry` 接口扩展字段 |
+| 对标 | F1 官方 sector 时间 | GP Tempo 弯角速度对比 |
+
+#### 2.6.2 后端算法：corner_segments
+
+把归一化 0~1 距离等分 30 段，每段求各车手 speed 数组对应索引的平均值：
+
+```python
+NUM_SEGMENTS = 30
+corner_segments = []
+total_dist = float(all_distances[-1])  # 1.0
+seg_len = total_dist / NUM_SEGMENTS    # 0.0333
+
+for seg_i in range(NUM_SEGMENTS):
+    start_d = seg_i * seg_len
+    end_d = (seg_i + 1) * seg_len
+    # 找出该距离范围内的采样点索引
+    indices = [i for i, d in enumerate(all_distances)
+               if d is not None and start_d <= float(d) <= end_d]
+    # 对每位车手，求该段 speed 平均值，取最大者为 fastest_driver
+    best_code, best_avg = None, -1.0
+    for code, chans in drivers_data.items():
+        seg_speeds = [float(chans["speed"][i]) for i in indices
+                      if i < len(chans["speed"]) and chans["speed"][i] is not None]
+        if seg_speeds:
+            avg = sum(seg_speeds) / len(seg_speeds)
+            if avg > best_avg:
+                best_avg, best_code = avg, code
+    corner_segments.append({
+        "segment_index": seg_i,
+        "start_dist": round(start_d, 4),
+        "end_dist": round(end_d, 4),
+        "fastest_driver": best_code,
+        "fastest_avg_speed_kmh": round(best_avg, 1) if best_avg > 0 else None,
+    })
+```
+
+#### 2.6.3 track_points 提取
+
+从车手最快圈的 **position data**（不是 circuit_info）提取赛道轮廓：
+
+```python
+fastest = laps.pick_fastest()
+pos_data = fastest.get_pos_data()  # 需要 session.load(telemetry=True)
+
+# 降采样
+step = max(1, len(pos_data) // 200)
+sampled = pos_data.iloc[::step]
+
+# 归一化 X/Y 到 0-100，Y 轴翻转
+x_vals = sampled["X"].fillna(0).values
+y_vals = sampled["Y"].fillna(0).values
+x_min, x_max = float(np.min(x_vals)), float(np.max(x_vals))
+y_min, y_max = float(np.min(y_vals)), float(np.max(y_vals))
+
+track_points = [{
+    "x": round((float(x) - x_min) / max(x_max - x_min, 0.001) * 100, 2),
+    "y": round(100 - (float(y) - y_min) / max(y_max - y_min, 0.001) * 100, 2),
+} for x, y in zip(x_vals, y_vals)]
+```
+
+#### 2.6.4 前端 ECharts 分段渲染
+
+TrackLayer.vue 接收 `cornerSegments` + `driverColorMap` 两个 props，按段生成独立 series：
+
+```javascript
+// 每段一个 series，颜色 = 该段最快车手的车队色
+for (let i = 0; i < segCount; i++) {
+  const seg = cornerSegments[i]
+  const startIdx = Math.floor((i / segCount) * N)
+  const endIdx = Math.max(startIdx + 1, Math.floor(((i + 1) / segCount) * N))
+  const slice = trackLine.slice(startIdx, endIdx)
+  const code = seg.fastest_driver
+  const color = driverColorMap[code] || '#444'
+  segSeriesList.push({
+    name: code, type: 'line', data: slice,
+    showSymbol: false, smooth: true,
+    lineStyle: { width: 5, color },
+    emphasis: { lineStyle: { width: 7 } },
+  })
+}
+```
+
+#### 2.6.5 关键踩坑
+
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| distances 返回 `[0,1,2,...,310]` | FastF1 3.8.x `car_data` 无 `Distance` 列，fallback 到 `range()` | 改用归一化 `i/(N-1)`，所有车手共享索引基准 |
+| corner_segments `end_dist=0.0` | `round(0.0333, 1)` = 0.0 精度丢失 | round 改为 4 位小数 |
+| track_points 为空 | `get_pos_data()` 需要 `telemetry=True` | `session.load(telemetry=True)` |
+| 改后接口仍返回旧数据 | `telemetry_v2_` 缓存命中旧结果 | 删除 `cache/fastf1_result_cache/telemetry_v2_*.json` |
+| 改错文件没效果 | 误改 `TeleCompare.vue`（legacy 页面），实际组件是 `views/telemetry/TrackLayer.vue` | 确认路由 `/telemetry` → `TelemetryCockpit.vue` → `TrackLayer.vue` |
+
 ---
 
 ## 三、B6 天气数据叠加（Weather）

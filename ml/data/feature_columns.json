@@ -1,0 +1,68 @@
+{
+  "feature_columns": [
+    "qualifying_pos",
+    "grid",
+    "qualifying_pos_inv",
+    "grid_inv",
+    "driver_season_points_before",
+    "driver_season_races_before",
+    "driver_season_wins_before",
+    "driver_season_dnfs_before",
+    "driver_season_avg_pos_before",
+    "driver_last5_avg_pos",
+    "driver_last5_dnfs",
+    "driver_circuit_avg_pos",
+    "driver_circuit_races",
+    "driver_circuit_dnfs",
+    "constructor_season_points_before",
+    "constructor_season_avg_pos_before",
+    "constructor_season_dnfs_before",
+    "regulation_era",
+    "round_normalized"
+  ],
+  "feature_groups": {
+    "baseline": [
+      "qualifying_pos",
+      "grid",
+      "qualifying_pos_inv",
+      "grid_inv"
+    ],
+    "driver_season": [
+      "driver_season_points_before",
+      "driver_season_races_before",
+      "driver_season_wins_before",
+      "driver_season_dnfs_before",
+      "driver_season_avg_pos_before"
+    ],
+    "driver_recent": [
+      "driver_last5_avg_pos",
+      "driver_last5_dnfs"
+    ],
+    "driver_circuit": [
+      "driver_circuit_avg_pos",
+      "driver_circuit_races",
+      "driver_circuit_dnfs"
+    ],
+    "constructor": [
+      "constructor_season_points_before",
+      "constructor_season_avg_pos_before",
+      "constructor_season_dnfs_before"
+    ],
+    "context": [
+      "regulation_era",
+      "round_normalized"
+    ]
+  },
+  "label_column": "is_win",
+  "meta_columns": [
+    "year",
+    "round",
+    "race_name",
+    "race_date",
+    "driver_code",
+    "driver_name",
+    "constructor_name",
+    "circuit_id",
+    "circuit_name"
+  ]
+}

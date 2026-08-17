@@ -21,8 +21,10 @@ matplotlib>=3.9.0
 # --- F1 数据 ---
 fastf1==3.8.3
 
+# --- AI 预测（XGBoost + SHAP）---
+scikit-learn>=1.5.0
+xgboost>=2.1.0
+shap>=0.46.0
+
 # --- 可选 ---
 # streamlit>=1.38.0  # 快速原型看板
-# scikit-learn>=1.5.0  # AI 预测（阶段 3B XGBoost）
-# xgboost>=2.1.0  # AI 预测模型
-# shap>=0.46.0  # 特征重要性分析

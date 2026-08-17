@@ -45,16 +45,35 @@ function renderChart() {
   const series = []
   const legend = []
 
-  if (props.telemetryData?.telemetry) {
-    props.drivers.forEach((code, i) => {
-      const driverTel = props.telemetryData.telemetry[code]
-      if (!driverTel?.telemetry?.length) return
+  // 后端返回格式: { drivers: { VER: { throttle: [100, ...], brake: [0, ...] } }, distances: [...] }
+  const driversData = props.telemetryData?.drivers || props.telemetryData?.telemetry || {}
+  const distances = props.telemetryData?.distances || []
 
-      const throttleData = driverTel.telemetry.map((p, idx) => [idx, p.Throttle ?? p.throttle ?? 0])
-      const brakeData = driverTel.telemetry.map((p, idx) => [idx, p.Brake ?? p.brake ?? 0])
+  if (driversData && Object.keys(driversData).length > 0) {
+    props.drivers.forEach((code, i) => {
+      const driverTel = driversData[code]
+      if (!driverTel) return
+
+      // 适配两种格式：1) { throttle: [...], brake: [...] }  2) { telemetry: [{ Throttle, Brake }] }
+      let throttleArr = []
+      let brakeArr = []
+      if (Array.isArray(driverTel.throttle)) {
+        throttleArr = driverTel.throttle
+        brakeArr = driverTel.brake || []
+      } else if (Array.isArray(driverTel.telemetry)) {
+        throttleArr = driverTel.telemetry.map(p => p.Throttle ?? p.throttle ?? 0)
+        brakeArr = driverTel.telemetry.map(p => p.Brake ?? p.brake ?? 0)
+      } else {
+        return
+      }
+
+      if (!throttleArr.length) return
 
       legend.push(`${code} 油门`)
       legend.push(`${code} 刹车`)
+
+      const throttleData = throttleArr.map((v, idx) => [distances[idx] ?? idx, v])
+      const brakeData = brakeArr.map((v, idx) => [distances[idx] ?? idx, v])
 
       series.push({
         name: `${code} 油门`,
@@ -97,6 +116,7 @@ function renderChart() {
     grid: { left: 50, right: 20, top: 30, bottom: 30 },
     xAxis: {
       type: 'value',
+      name: '距离 (m)',
       nameTextStyle: { color: '#707070' },
       axisLabel: { color: '#707070' },
       axisLine: { lineStyle: { color: '#333' } },

@@ -48,3 +48,6 @@ ml/models/*.pkl
 
 # Build output
 frontend/dist/
+
+# Server logs
+logs/

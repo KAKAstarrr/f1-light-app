@@ -40,21 +40,36 @@ watch(() => [props.telemetryData, props.drivers], renderChart, { deep: true })
 function resize() { chart?.resize() }
 
 function renderChart() {
-  if (!chart || !props.telemetryData?.telemetry) return
+  if (!chart) return
   if (props.drivers.length < 2) return
 
-  // 第一名车手作为基准
-  const baseCode = props.drivers[0]
-  const baseTel = props.telemetryData.telemetry[baseCode]
-  if (!baseTel?.telemetry?.length) return
+  // 后端返回格式: { drivers: { VER: { speed: [310, ...] } }, distances: [0, 1, 2, ...] }
+  const driversData = props.telemetryData?.drivers || props.telemetryData?.telemetry || {}
+  const distances = props.telemetryData?.distances || []
 
-  // 基准车手的距离-时间积分
-  const baseData = baseTel.telemetry
-  const baseDistance = [0]
-  for (let i = 1; i < baseData.length; i++) {
-    const dt = 1 / 240 // 假设 240Hz 采样
-    const speed = (baseData[i].Speed || baseData[i].speed || 0) / 3.6 // km/h → m/s
-    baseDistance.push(baseDistance[i - 1] + speed * dt)
+  const baseCode = props.drivers[0]
+  const baseDriver = driversData[baseCode]
+  if (!baseDriver) return
+
+  // 提取速度数组（兼容两种格式）
+  const getSpeedArr = (driverTel) => {
+    if (!driverTel) return []
+    if (Array.isArray(driverTel.speed)) return driverTel.speed
+    if (Array.isArray(driverTel.telemetry)) return driverTel.telemetry.map(p => p.Speed ?? p.speed ?? 0)
+    return []
+  }
+
+  const baseSpeed = getSpeedArr(baseDriver)
+  if (!baseSpeed.length) return
+
+  // 计算基准车手在各距离点的时间（速度积分）
+  // dt = distance_step / speed (m/s)
+  const baseTimeAtDist = [0]
+  for (let i = 1; i < baseSpeed.length; i++) {
+    const dx = (distances[i] ?? 1) - (distances[i - 1] ?? 0)
+    const speedMs = (baseSpeed[i] + baseSpeed[i - 1]) / 2 / 3.6 // km/h → m/s，取平均
+    const dt = speedMs > 0 ? dx / speedMs : 0.1
+    baseTimeAtDist.push(baseTimeAtDist[i - 1] + dt)
   }
 
   const series = []
@@ -65,7 +80,7 @@ function renderChart() {
   series.push({
     name: baseCode,
     type: 'line',
-    data: baseData.map((_, i) => [baseDistance[i], 0]),
+    data: distances.map((d, i) => [d, 0]),
     showSymbol: false,
     lineStyle: { color: DRIVER_CHART_COLORS[0], width: 2, type: 'dashed' },
     itemStyle: { color: DRIVER_CHART_COLORS[0] },
@@ -74,31 +89,23 @@ function renderChart() {
   // 其他车手 delta
   for (let di = 1; di < props.drivers.length; di++) {
     const code = props.drivers[di]
-    const tel = props.telemetryData.telemetry[code]
-    if (!tel?.telemetry?.length) continue
+    const drvSpeed = getSpeedArr(driversData[code])
+    if (!drvSpeed.length) continue
 
-    const driverData = tel.telemetry
-    const driverDistance = [0]
-    for (let i = 1; i < driverData.length; i++) {
-      const dt = 1 / 240
-      const speed = (driverData[i].Speed || driverData[i].speed || 0) / 3.6
-      driverDistance.push(driverDistance[i - 1] + speed * dt)
+    // 计算该车手在各距离点的时间
+    const drvTimeAtDist = [0]
+    for (let i = 1; i < drvSpeed.length; i++) {
+      const dx = (distances[i] ?? 1) - (distances[i - 1] ?? 0)
+      const speedMs = (drvSpeed[i] + drvSpeed[i - 1]) / 2 / 3.6
+      const dt = speedMs > 0 ? dx / speedMs : 0.1
+      drvTimeAtDist.push(drvTimeAtDist[i - 1] + dt)
     }
 
-    // 在相同距离点计算时间差
+    // delta = drvTime - baseTime 在各距离点
+    const maxLen = Math.min(baseTimeAtDist.length, drvTimeAtDist.length)
     const deltaData = []
-    const maxLen = Math.min(baseData.length, driverData.length)
-    let baseTime = 0
-    let driverTime = 0
-
     for (let i = 0; i < maxLen; i++) {
-      if (i > 0) {
-        const baseSpeed = (baseData[i].Speed || baseData[i].speed || 0) / 3.6
-        const driverSpeed = (driverData[i].Speed || driverData[i].speed || 0) / 3.6
-        baseTime += 1 / 240
-        driverTime += 1 / 240
-      }
-      deltaData.push([baseDistance[i], driverTime - baseTime])
+      deltaData.push([distances[i] ?? i, drvTimeAtDist[i] - baseTimeAtDist[i]])
     }
 
     legend.push(code)

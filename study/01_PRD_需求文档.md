@@ -226,10 +226,8 @@ driver_price = base_price × (0.5 + 0.5 × season_points_ratio)
 | DEV-1 | 全部 API 响应时间 < 2s（缓存命中时 < 200ms） |
 | DEV-2 | 所有接口有 Swagger/OpenAPI 文档，请求响应类型完整 |
 | DEV-3 | 数据库表关系正确，索引覆盖查询场景 |
-| DEV-4 | Docker 一键启动，`docker-compose up` 可跑通全链路 |
-| DEV-5 | 前端页面响应式适配，移动端/桌面端均可使用 |
-| DEV-6 | 代码有单元测试（关键业务逻辑覆盖率 > 70%） |
-| DEV-7 | CI/CD 流程自动运行 lint + test + build |
+| DEV-4 | 前端页面响应式适配，移动端/桌面端均可使用 |
+| DEV-5 | 代码有单元测试（关键业务逻辑覆盖率 > 70%） |
 
 ### 5.2 产品岗
 

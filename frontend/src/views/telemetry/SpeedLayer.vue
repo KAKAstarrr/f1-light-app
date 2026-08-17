@@ -45,13 +45,29 @@ function renderChart() {
   const series = []
   const legend = []
 
-  if (props.telemetryData?.telemetry) {
+  // 后端返回格式: { drivers: { VER: { speed: [310, 305, ...] } }, distances: [0, 1, 2, ...] }
+  const driversData = props.telemetryData?.drivers || props.telemetryData?.telemetry || {}
+  const distances = props.telemetryData?.distances || []
+
+  if (driversData && Object.keys(driversData).length > 0) {
     props.drivers.forEach((code, i) => {
-      const driverTel = props.telemetryData.telemetry[code]
-      if (!driverTel?.telemetry?.length) return
+      const driverTel = driversData[code]
+      if (!driverTel) return
+
+      // 适配两种数据格式：1) { speed: [310, ...] }  2) { telemetry: [{ Speed: 310, ... }] }
+      let speedData = []
+      if (Array.isArray(driverTel.speed)) {
+        speedData = driverTel.speed
+      } else if (Array.isArray(driverTel.telemetry)) {
+        speedData = driverTel.telemetry.map(p => p.Speed ?? p.speed ?? 0)
+      } else {
+        return
+      }
+
+      if (!speedData.length) return
 
       legend.push(code)
-      const data = driverTel.telemetry.map((p, idx) => [idx, p.Speed ?? p.speed ?? 0])
+      const data = speedData.map((v, idx) => [distances[idx] ?? idx, v])
       series.push({
         name: code,
         type: 'line',
@@ -81,7 +97,7 @@ function renderChart() {
     grid: { left: 50, right: 20, top: 30, bottom: 30 },
     xAxis: {
       type: 'value',
-      name: '采样点',
+      name: '距离 (m)',
       nameTextStyle: { color: '#707070' },
       axisLabel: { color: '#707070' },
       axisLine: { lineStyle: { color: '#333' } },

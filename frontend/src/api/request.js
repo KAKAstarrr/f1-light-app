@@ -3,7 +3,7 @@ import { ElLoading, ElMessage } from 'element-plus'
 
 // 创建 axios 实例
 const service = axios.create({
-  baseURL: 'http://localhost:8000', // FastAPI 后端地址
+  baseURL: '', // 通过 Vite proxy 代理 /api → http://localhost:8010（避免 CORS）
   timeout: 15000 // 15 秒超时（FastF1 首次加载可能较慢）
 })
 

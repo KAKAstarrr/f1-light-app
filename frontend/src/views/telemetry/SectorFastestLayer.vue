@@ -48,8 +48,8 @@ function renderChart() {
   }
 
   const categories = sectors.map(s => `S${s.sector || s.Sector}`)
-  const times = sectors.map(s => Number(s.time || s.Time || s.LapTimeSeconds || 0))
-  const drivers = sectors.map(s => s.driver || s.Driver || '?')
+  const times = sectors.map(s => Number(s.fastest_time || s.time || s.Time || s.LapTimeSeconds || 0))
+  const drivers = sectors.map(s => s.fastest_driver || s.driver || s.Driver || '?')
 
   const option = {
     backgroundColor: 'transparent',

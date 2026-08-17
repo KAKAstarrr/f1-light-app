@@ -432,7 +432,14 @@ def fetch_fastf1_telemetry_compare(
           "code": 200,
           "year": 2025, "round": 1,
           "channels": ["speed", "throttle"],
+          "circuit_name": "Albert Park Grand Prix Circuit",
+          "track_points": [{"x": 12.3, "y": 45.6}, ...],  # 归一化坐标 0-100
           "distances": [0.0, 12.5, 25.0, ...],  # 归一化距离（米）
+          "corner_segments": [  # 沿距离等分 N 段，每段标记该段最快车手
+            {"segment_index": 0, "start_dist": 0, "end_dist": 187.5,
+             "fastest_driver": "VER", "fastest_avg_speed_kmh": 285.3},
+            ...
+          ],
           "drivers": {
             "VER": {
               "speed": [310, 305, ...],
@@ -446,8 +453,12 @@ def fetch_fastf1_telemetry_compare(
         - get_car_data() 需要在 session.load(telemetry=True) 之后才能调用
         - 原始数据是逐帧采样（约 20Hz），点数很多，需降采样到 ~200 个点
         - Distance 列用于 X 轴对齐多车手
+        - X/Y 坐标在 get_pos_data() 中（不在 get_car_data() 中），用第一位车手最快圈的 pos_data
+          提取赛道轮廓，按 distance 列对齐各车手遥测数据
+        - corner_segments 按 distances 等分（如 30 段），每段求各车手平均速度，最大者即为该段最快
+          车手，颜色用对应车队色绘制赛道分段
     """
-    cache_key = f"telemetry_{year}_{round_num}_{session_type}_{'_'.join(driver_codes)}_{'_'.join(channels)}"
+    cache_key = f"telemetry_v2_{year}_{round_num}_{session_type}_{'_'.join(driver_codes)}_{'_'.join(channels)}"
     cached = _load_fastf1_result(cache_key)
     if cached is not None:
         return cached
@@ -475,6 +486,8 @@ def fetch_fastf1_telemetry_compare(
     # 取每位车手最快一圈的遥测数据
     drivers_data = {}
     all_distances = None
+    track_points = []            # 赛道轮廓 [{x, y}]，从第一位成功车手的最快圈 pos_data 提取
+    circuit_name = ""
 
     for code in driver_codes:
         try:
@@ -490,14 +503,11 @@ def fetch_fastf1_telemetry_compare(
             step = max(1, len(car_data) // 200)
             sampled = car_data.iloc[::step].reset_index(drop=True)
 
-            # 提取距离作为 X 轴
-            if "Distance" in sampled.columns:
-                distances = sampled["Distance"].tolist()
-            else:
-                distances = list(range(len(sampled)))
-
+            # FastF1 3.8.x car_data 没有 Distance 列，
+            # 用归一化距离（0~1）作为 X 轴，所有车手共享同一索引
+            n = len(sampled)
             if all_distances is None:
-                all_distances = [round(float(d), 1) for d in distances]
+                all_distances = [round(i / max(n - 1, 1), 4) for i in range(n)]
 
             # 提取各通道
             drv_channels = {}
@@ -511,6 +521,31 @@ def fetch_fastf1_telemetry_compare(
 
             drivers_data[code] = drv_channels
 
+            # 第一位成功提取的车手 = 赛道轮廓基准，用其 pos_data 拿 X/Y
+            if not track_points:
+                try:
+                    pos_data = fastest.get_pos_data()
+                    if pos_data is not None and len(pos_data) > 0 \
+                            and "X" in pos_data.columns and "Y" in pos_data.columns:
+                        # 按与 car_data 相同的 step 降采样
+                        pos_step = max(1, len(pos_data) // 200)
+                        pos_sampled = pos_data.iloc[::pos_step].reset_index(drop=True)
+                        x_vals = pos_sampled["X"].dropna().values
+                        y_vals = pos_sampled["Y"].dropna().values
+                        if len(x_vals) > 10:
+                            x_min, x_max = float(np.min(x_vals)), float(np.max(x_vals))
+                            y_min, y_max = float(np.min(y_vals)), float(np.max(y_vals))
+                            x_range = max(x_max - x_min, 0.001)
+                            y_range = max(y_max - y_min, 0.001)
+                            # Y 轴翻转（F1 官方 lat/lon → 屏幕坐标需要翻转）
+                            for px, py in zip(x_vals, y_vals):
+                                track_points.append({
+                                    "x": round((float(px) - x_min) / x_range * 100, 2),
+                                    "y": round((1 - (float(py) - y_min) / y_range) * 100, 2),
+                                })
+                except Exception as e:
+                    print(f"[赛道轮廓提取失败] {code}: {e}")
+
         except Exception as e:
             print(f"[遥测提取失败] {code}: {e}")
             continue
@@ -518,11 +553,74 @@ def fetch_fastf1_telemetry_compare(
     if not drivers_data:
         return {"code": 500, "msg": "未能提取任何车手的遥测数据"}
 
+    # 赛道名
+    try:
+        circuit_name = str(session.event["EventName"]) if hasattr(session, "event") else ""
+    except Exception:
+        circuit_name = ""
+
+    # ============================================================
+    # 计算 corner_segments：沿 distances 等分 N 段（默认 30），
+    # 每段求各车手平均速度，最大者为该段最快车手
+    # ============================================================
+    NUM_SEGMENTS = 30
+    corner_segments = []
+    if all_distances and len(all_distances) >= 2:
+        total_dist = float(all_distances[-1])
+        if total_dist <= 0:
+            total_dist = float(len(all_distances))  # fallback 用索引当距离
+
+        seg_len = total_dist / NUM_SEGMENTS
+        for seg_i in range(NUM_SEGMENTS):
+            start_d = seg_i * seg_len
+            end_d = (seg_i + 1) * seg_len
+            # 找出 indices 在该距离区间的所有采样点
+            indices = [
+                i for i, d in enumerate(all_distances)
+                if d is not None and start_d <= float(d) <= end_d
+            ]
+            if not indices:
+                corner_segments.append({
+                    "segment_index": seg_i,
+                    "start_dist": round(start_d, 4),
+                    "end_dist": round(end_d, 4),
+                    "fastest_driver": None,
+                    "fastest_avg_speed_kmh": None,
+                })
+                continue
+
+            best_code = None
+            best_avg = -1.0
+            for code, chans in drivers_data.items():
+                speed_arr = chans.get("speed") or []
+                if not speed_arr:
+                    continue
+                seg_speeds = [
+                    float(speed_arr[i]) for i in indices
+                    if i < len(speed_arr) and speed_arr[i] is not None
+                ]
+                if not seg_speeds:
+                    continue
+                avg = sum(seg_speeds) / len(seg_speeds)
+                if avg > best_avg:
+                    best_avg = avg
+                    best_code = code
+            corner_segments.append({
+                "segment_index": seg_i,
+                "start_dist": round(start_d, 4),
+                "end_dist": round(end_d, 4),
+                "fastest_driver": best_code,
+                "fastest_avg_speed_kmh": round(best_avg, 1) if best_avg > 0 else None,
+            })
+
     result = {
         "code": 200,
         "year": year,
         "round": round_num,
         "channels": channels,
+        "circuit_name": circuit_name,
+        "track_points": track_points,
+        "corner_segments": corner_segments,
         "distances": all_distances or [],
         "drivers": drivers_data,
     }
@@ -888,7 +986,8 @@ def fetch_fastf1_track_map(year: int, round_num: int, session_type: str = "R"):
 
     try:
         session = fastf1.get_session(year, round_num, session_type)
-        session.load(laps=True, telemetry=False, weather=False, messages=False)
+        # 需要加载 telemetry=True 才能从车手遥测数据中提取 X/Y 坐标作为 track_points fallback
+        session.load(laps=True, telemetry=True, weather=False, messages=False)
     except Exception as e:
         return {"code": 500, "msg": f"FastF1 加载失败: {e}"}
 
@@ -915,6 +1014,40 @@ def fetch_fastf1_track_map(year: int, round_num: int, session_type: str = "R"):
                         })
     except Exception as e:
         print(f"[赛道坐标获取失败] {e}")
+
+    # Fallback: 如果 circuit_info 没有坐标，从遥测数据中提取车手 X/Y 轨迹
+    if not track_points:
+        try:
+            laps = getattr(session, "laps", None)
+            if laps is not None and len(laps) > 0:
+                # 取第一辆车的最快圈位置数据，用 X/Y 坐标画出赛道轮廓
+                first_driver = laps["Driver"].iloc[0]
+                drv_laps = laps[laps["Driver"] == first_driver]
+                if not drv_laps.empty:
+                    fastest = drv_laps.pick_fastest()
+                    # 使用 get_pos_data() 获取 X/Y 坐标（不是 get_car_data()）
+                    pos_data = fastest.get_pos_data()
+                    if pos_data is not None and len(pos_data) > 0:
+                        if "X" in pos_data.columns and "Y" in pos_data.columns:
+                            x_vals = pos_data["X"].dropna().values
+                            y_vals = pos_data["Y"].dropna().values
+                            if len(x_vals) > 10:  # 确保有足够的数据点
+                                # 降采样到 ~200 个点
+                                step = max(1, len(x_vals) // 200)
+                                x_sampled = x_vals[::step]
+                                y_sampled = y_vals[::step]
+                                x_min, x_max = float(np.min(x_sampled)), float(np.max(x_sampled))
+                                y_min, y_max = float(np.min(y_sampled)), float(np.max(y_sampled))
+                                x_range = max(x_max - x_min, 0.001)
+                                y_range = max(y_max - y_min, 0.001)
+                                for x, y in zip(x_sampled, y_sampled):
+                                    track_points.append({
+                                        "x": round((float(x) - x_min) / x_range * 100, 2),
+                                        "y": round((float(y) - y_min) / y_range * 100, 2),
+                                    })
+                                print(f"[赛道坐标] 从位置数据提取 {len(track_points)} 个点")
+        except Exception as e:
+            print(f"[遥测坐标 fallback 失败] {e}")
 
     # 获取赛道名
     try:

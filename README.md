@@ -1,7 +1,7 @@
 # F1 Light App — F1 赛事数据互动平台
 
 > 基于 FastAPI + Ergast + FastF1 + Vue 3 的 F1 全栈分析应用。
-> 已完成 **模块 A（基础数据）+ 模块 B（遥测分析：分段最快/遥测对比/圈速分布）+ 模块 3A（用户鉴权）+ 模块 3B（AI 预测）+ 模块 3C（Fantasy + 投票）**，后端 28 个 API 全部跑通。
+> 已完成 **模块 A（基础数据）+ 模块 B（遥测分析：分段最快/遥测对比/圈速分布/速度叠加/赛道地图/天气）+ 模块 3A（用户鉴权）+ 模块 3B（AI 预测）+ 模块 3C（Fantasy + 投票 + 定价 + 芯片 + 联盟）**，后端 39 个 API 全部跑通。
 
 ---
 
@@ -31,11 +31,11 @@
 f1_light_app/
 ├── backend/
 │   ├── __init__.py             # Python 包标识
-│   ├── main.py                 # 路由层：28 个 API + CORS + 自动建表
+│   ├── main.py                 # 路由层：39 个 API + CORS + 自动建表 + 自动迁移
 │   ├── data_source.py          # 数据源层：Ergast + FastF1 封装与三级缓存
 │   ├── config.py               # 配置管理（DB/JWT/Fantasy 规则）
 │   ├── database.py             # SQLAlchemy 引擎 + 会话 + 建表
-│   ├── models.py               # 8 张 ORM 表（User/Driver/Constructor/FantasyTeam/...）
+│   ├── models.py               # 10 张 ORM 表（User/Driver/Constructor/FantasyTeam/League/...）
 │   ├── schemas.py              # Pydantic 请求/响应模型
 │   ├── auth.py                 # JWT 鉴权（bcrypt 哈希 + Token 签发/校验）
 │   ├── game_service.py         # Fantasy 积分规则 + 动态定价
@@ -61,9 +61,13 @@ f1_light_app/
 │   │   │   │   ├── LapRank.vue #   最快圈排行
 │   │   │   │   ├── SectorFastest.vue # 赛道分段最快
 │   │   │   │   ├── TeleCompare.vue # 遥测对比
-│   │   │   │   └── LapBoxPlot.vue  # 圈速分布箱线图
+│   │   │   │   ├── LapBoxPlot.vue  # 圈速分布箱线图
+│   │   │   │   ├── SpeedOverlay.vue # 速度叠加对比
+│   │   │   │   └── TrackMap.vue    # 赛道地图 SVG
+│   │   │   ├── TelemetryCockpit.vue # 遥测大屏（6 图层联动）
 │   │   │   ├── Prediction.vue  #   AI 夺冠概率预测
-│   │   │   ├── FantasyTeam.vue #   Fantasy 阵容管理
+│   │   │   ├── FantasyTeam.vue #   Fantasy 阵容管理（含芯片/历史）
+│   │   │   ├── League.vue      #   Fantasy 联盟管理
 │   │   │   ├── Vote.vue        #   最佳车手投票
 │   │   │   └── NotFound.vue    #   404 页
 │   │   ├── components/         # 可复用组件
@@ -98,7 +102,6 @@ f1_light_app/
 │   ├── 02_架构文档.md
 │   ├── 03_接口文档.md
 │   ├── 04_数据库设计.md
-│   ├── 05_部署文档.md
 │   ├── 06_复盘文档.md
 │   ├── 07_学习规划路线.md
 │   ├── 08_Vue3前端知识点.md
@@ -106,9 +109,10 @@ f1_light_app/
 │   ├── 10_阶段1_后端基础数据知识点.md
 │   ├── 11_阶段3_数据库与AI预测知识点.md
 │   ├── 12_阶段2_遥测分析知识点.md
+│   ├── 13_阶段2_3扩展_速度叠加_赛道地图_天气_Fantasy扩展知识点.md
 │   ├── data_knowledge.md       # NumPy/Pandas/Matplotlib 知识点
 │   ├── streamlit知识点.md      # Streamlit 知识点
-│   └── F1项目规划.md           # 初始规划
+│   └── F1项目规划.md           # 初始规划（早期版本留念）
 │
 ├── .gitignore
 ├── requirements.txt
@@ -123,7 +127,7 @@ f1_light_app/
 
 ---
 
-## 三、API 接口清单（28 个 API）
+## 三、API 接口清单（39 个 API）
 
 ### A1 当年赛程（2 个）
 | 方法 | 路径 | 说明 |
@@ -149,14 +153,17 @@ f1_light_app/
 | GET | `/api/current/constructorstandings` | 当前赛季车队积分榜 |
 | GET | `/api/{year}/constructorstandings` | 历史赛季车队积分榜 |
 
-### A4 / B 圈速 / 轮胎 / 遥测（5 个）
+### A4 / B 圈速 / 轮胎 / 遥测（8 个）
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/fastf1/{year}/{round}/fast-lap` | 单场车手最快圈排行 |
 | GET | `/api/fastf1/{year}/{round}/tyre-strategy` | 单站正赛轮胎进站策略 |
-| GET | `/api/fastf1/{year}/{round}/telemetry` | 多车手遥测对比（speed/throttle/brake 等） |
+| GET | `/api/fastf1/{year}/{round}/telemetry` | 多车手遥测对比（speed/throttle/brake 等）+ 赛道轮廓 + 30 段最快车手染色 |
 | GET | `/api/fastf1/{year}/{round}/sector-fastest` | 赛道分段最快（Sector 1/2/3 排行） |
 | GET | `/api/fastf1/{year}/{round}/lap-distribution` | 圈速分布（箱线图数据） |
+| GET | `/api/fastf1/{year}/{round}/speed-overlay` | 多车手速度叠加（numpy.interp 统一网格） |
+| GET | `/api/fastf1/{year}/{round}/track-map` | 赛道 SVG 坐标 + 分段着色 |
+| GET | `/api/fastf1/{year}/{round}/weather` | 天气数据（温度/湿度/风速/降雨） |
 
 ### 3A 用户鉴权（3 个）
 | 方法 | 路径 | 说明 | 认证 |
@@ -170,13 +177,21 @@ f1_light_app/
 |------|------|------|
 | GET | `/api/prediction/{year}/{round}` | AI 夺冠概率预测（规则加权模型） |
 
-### 3C Fantasy（4 个）
+### 3C Fantasy（11 个）
 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|
 | POST | `/api/fantasy/team` | 创建/更新 Fantasy 阵容 | Bearer Token |
 | GET | `/api/fantasy/team/{season}/{round}` | 查看我的阵容 | Bearer Token |
 | POST | `/api/fantasy/score/{season}/{round}` | 结算 Fantasy 积分 | Bearer Token |
 | GET | `/api/fantasy/leaderboard/{season}` | 赛季排行榜 | 无 |
+| GET | `/api/fantasy/prices?season=` | 动态定价（双赛季积分加权） | 无 |
+| GET | `/api/fantasy/history?season=` | 历史阵容及积分记录 | Bearer Token |
+| POST | `/api/fantasy/chip` | 使用芯片（Limitless/Wildcard/NoNegative） | Bearer Token |
+| GET | `/api/fantasy/chip-status?season=` | 查询芯片剩余次数 | Bearer Token |
+| POST | `/api/fantasy/leagues` | 创建联盟（生成邀请码） | Bearer Token |
+| POST | `/api/fantasy/leagues/{id}/join` | 加入联盟（验证邀请码） | Bearer Token |
+| GET | `/api/fantasy/leagues/{id}/leaderboard` | 联盟内排行榜 | Bearer Token |
+| GET | `/api/fantasy/my-leagues` | 我的联盟列表 | Bearer Token |
 
 ### E 投票（2 个）
 | 方法 | 路径 | 说明 | 认证 |
@@ -202,8 +217,12 @@ f1_light_app/
 | 赛道分段最快 | `/sector-fastest` | Sector 1/2/3 分段排行 + 全场分段总和最快 |
 | 遥测对比 | `/tele-compare` | 多车手多通道遥测叠加图 |
 | 圈速分布 | `/lap-distribution` | 箱线图 + 异常值散点 + 统计明细 |
+| 速度叠加 | `/speed-overlay` | 多车手速度叠加对比（numpy.interp 统一网格） |
+| 赛道地图 | `/track-map` | SVG 赛道轮廓 + 分段着色（Purple/Green/Yellow） |
+| 遥测大屏 | `/telemetry-cockpit` | 6 图层联动（速度/油门刹车/Delta/赛道染色/分段/分布） |
 | AI 预测 | `/prediction` | 夺冠概率 Top3 卡片 + ECharts 柱状图 |
-| Fantasy | `/fantasy` | 车手/车队选择 + 预算追踪 + 队长/芯片 + 排行榜 |
+| Fantasy | `/fantasy` | 车手/车队选择 + 预算追踪 + 队长/芯片 + 历史记录 + 排行榜 |
+| Fantasy 联盟 | `/league` | 创建/加入联盟 + 邀请码 + 联盟排行榜 |
 | 投票 | `/vote` | 最佳车手投票 + 投票结果条形图 |
 | 404 | `/*` | 兜底页 |
 
@@ -268,6 +287,12 @@ f1_light_app/
 21. **Element Plus `el-checkbox` 的 `:label` 作 value 已废弃**：触发 `ElementPlusError` 警告，升级后无法选中。修复：`:label="y"` → `:value="y"`。
 22. **FastF1 遥测首次加载超时**：首次需从 F1 官网下载 50-100MB 原始数据，60s 不够。修复：遥测接口 timeout 提升到 120s，拦截器对遥测超时给出专属提示（第二次请求走缓存秒回）。
 
+### 2026-08-14 工程稳定性
+23. **Windows 端口残留 500（uvicorn `--reload` 反复触发）**：`uvicorn --reload` 在 Windows 上 worker fork/terminate 后**进程死了但 TCP socket 没释放**（Windows 网络栈 bug）。多次 reload 后 `netstat -ano | grep :PORT` 会看到 ≥2 个 LISTEN，内核通过 SO_REUSEADDR 随机分发请求，落到 stale worker 后 500。修复：`scripts/restart_backend.py`（基于 psutil）一键清端口 + 等 15s 释放 + 用 `DETACHED_PROCESS` 标志位后台启动。**任何 HTTP 500 + 端口多 LISTEN，立刻跑这个脚本**。**进一步**：开发期可放弃 `--reload` 改用 `nodemon`/`watchdog` 外部触发，避免 reload 残留。
+24. **PowerShell 5.1 `Start-Process -FilePath python.exe` 在路径含 `f1_project` 时触发 `Path 重复` bug**：PowerShell 把 `-FilePath` 当成 `-Path` + 环境变量 `$PATH` 冲突抛 `ArgumentException`。回避：用 Python `subprocess.Popen` + `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` 标志位，比 Start-Process 稳。
+26. **FastF1 3.8.x `car_data` 无 `Distance` 列**：`car_data.columns` 已变为 `['Date','RPM','Speed','nGear','Throttle','Brake','DRS','Source','Time','SessionTime']`，无 `Distance`。原代码 fallback 到 `range(len(sampled))` 导致 distances 为索引而非距离。修复：改用归一化 `i/(N-1)`，所有车手共享同一索引基准。赛道轮廓改从 `fastest.get_pos_data()` 提取 X/Y（position data），而非 `get_circuit_info()`。
+27. **`round()` 精度丢失**：`round(0.0333, 1)` = 0.0，corner_segments 的 start/end_dist 显示 0.0。修复：round 到 4 位小数。
+
 ---
 
 ## 八、环境与启动
@@ -281,22 +306,29 @@ pip install -r requirements.txt
 
 ### 2. 启动后端
 ```bash
-# 项目根目录
-uvicorn backend.main:app --reload          # http://127.0.0.1:8000
+# 项目根目录（默认 8010 端口，避开 8000 端口残留进程）
+uvicorn backend.main:app --reload --port 8010    # http://127.0.0.1:8010
 ```
+
+> ⚠️ **推荐用脚本**避免 Windows 端口残留：`scripts/start_backend.bat`（快速启动，遇到僵尸时换下方）：
+> ```bash
+> # 遇到端口残留/500 时一键自愈（python 写,杀掉 8010 全部占用 + 等 15s + 后台启动）
+> python scripts/restart_backend.py
+> # 或只清端口不启动：python scripts/restart_backend.py --no-start
+> ```
 
 ### 3. 启动前端
 ```bash
 cd frontend
 npm install
-npm run dev                                 # http://127.0.0.1:5173
+npm run dev                                        # http://127.0.0.1:5173
 ```
 
 ### 4. 访问
-- 后端接口文档：http://127.0.0.1:8000/docs
+- 后端接口文档：http://127.0.0.1:8010/docs
 - 前端页面：http://127.0.0.1:5173
-- 跨域已通过后端 `CORSMiddleware` 打通。
-- 首次启动后端时自动建表（SQLite），无需手动执行 SQL。
+- 前端通过 Vite proxy 代理 `/api` → 8010，无需 CORS 配置。
+- 首次启动后端时自动建表（SQLite）+ 自动迁移（`_auto_migrate()` 补缺失列）。
 
 > 首次请求 FastF1 接口需联网下载官方计时数据（较慢），之后命中本地缓存秒级返回。
 
@@ -304,9 +336,22 @@ npm run dev                                 # http://127.0.0.1:5173
 
 ## 九、后续迭代方向
 
-- [ ] XGBoost 替代规则加权模型（离线训练 → joblib → 在线推理）
-- [ ] Fantasy 联盟功能（创建/加入/联盟内排行榜）
-- [ ] Docker 化部署 + CI/CD
+- [x] XGBoost 替代规则加权模型（完成于 2026-08-14，Top-1 41.67% vs 33.33%）
+- [x] Windows 端口残留 500 修复 + 自愈脚本（完成于 2026-08-14）
 - [ ] 单元测试覆盖（pytest）
 - [ ] WebSocket 实时通知（Fantasy 结算后推送）
 - [ ] Redis 替代文件缓存
+- [ ] DNF 检测白名单判定（当前 `"Retired" in status` 不覆盖 Engine/Disqualified）
+- [ ] 缓存路径改用配置项（当前硬编码本机绝对路径）
+- [ ] 弃用 uvicorn `--reload`，改用 `watchdog`/`nodemon` 外部触发，彻底解决 Windows 僵尸 socket
+
+---
+
+## 十、已知技术债
+
+| 项目 | 说明 | 影响 |
+|------|------|------|
+| Tailwind CSS v4 | `@tailwindcss/vite` 插件已加载，但无 CSS 文件 `@import "tailwindcss"`，样式未生成。实际 CSS 用传统手写 | 零功能影响，package.json 有冗余依赖 |
+| Leaflet / vue3-leaflet | 安装但代码中零导入，赛道地图实际用 SVG polyline 实现 | 零功能影响，package.json 有冗余依赖 |
+| JWT 密钥默认值 | 开发环境使用硬编码默认值，生产环境需配 `JWT_SECRET` 环境变量 | 安全风险 |
+| 无速率限制 | 登录/注册接口可被暴力破解 | 安全风险 |

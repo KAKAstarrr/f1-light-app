@@ -40,7 +40,7 @@ function resize() { chart?.resize() }
 function renderChart() {
   if (!chart) return
 
-  const drivers = props.lapData?.lap_distribution || props.lapData?.drivers || []
+  const drivers = props.lapData?.distribution || props.lapData?.lap_distribution || props.lapData?.drivers || []
   const categories = []
   const boxData = []
   const scatterData = []

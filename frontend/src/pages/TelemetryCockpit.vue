@@ -68,6 +68,12 @@
           title="遥测分析大屏"
           description="选择年份、分站和车手后点击「加载数据」开始分析"
         />
+        <div v-if="loadError" class="load-error-msg">
+          {{ loadError }}
+        </div>
+        <el-button class="demo-btn" type="primary" plain size="small" @click="loadDemoData">
+          试用示例数据 (2024 R1 VER vs NOR)
+        </el-button>
       </div>
 
       <div v-else class="main-content" :class="`mode-${layerStore.viewMode}`">
@@ -82,6 +88,8 @@
             :telemetryData="telemetryData"
             :drivers="selectedDrivers"
             :currentTime="playerStore.currentTime"
+            :cornerSegments="cornerSegments"
+            :driverColorMap="driverColorMap"
           />
           <div v-else class="layer-disabled">
             <EmptyState icon="🗺️" title="赛道底图已关闭" description="在下方图层控制中开启" />
@@ -118,6 +126,8 @@
               :telemetryData="telemetryData"
               :drivers="selectedDrivers"
               :currentTime="playerStore.currentTime"
+              :cornerSegments="cornerSegments"
+              :driverColorMap="driverColorMap"
             />
           </div>
           <div class="split-right">
@@ -238,6 +248,7 @@ const sessionType = ref(route.query.sessionType || 'R')
 const driverOptions = ref([])
 const loading = ref(false)
 const hasData = ref(false)
+const loadError = ref(null) // 错误信息
 
 // 数据
 const telemetryData = ref(null)
@@ -256,24 +267,47 @@ const currentLap = computed(() => {
 })
 
 const compareDrivers = computed(() => {
-  if (!telemetryData.value?.telemetry) return []
+  if (!telemetryData.value?.drivers && !telemetryData.value?.telemetry) return []
+  const driversData = telemetryData.value.drivers || telemetryData.value.telemetry || {}
   return selectedDrivers.value.map((code, i) => {
-    const driverData = telemetryData.value.telemetry[code]
+    const driverData = driversData[code]
     if (!driverData) return { code, color: DRIVER_CHART_COLORS[i], name: code }
-    // 找最快圈
-    const laps = driverData.laps || []
-    const fastest = laps.reduce((min, l) => {
-      const lt = parseFloat(l.LapTimeSeconds || l.lap_time)
-      return lt && (!min || lt < min) ? lt : min
-    }, null)
+
+    // 从 speed 数组中估算最快圈速（用距离/平均速度）
+    let lapTime = null
+    const distances = telemetryData.value?.distances || []
+    const speedArr = driverData.speed || (driverData.telemetry || []).map(p => p.Speed ?? p.speed ?? 0)
+    if (speedArr.length > 0 && distances.length > 0) {
+      const totalDist = distances[distances.length - 1] - distances[0]
+      const avgSpeed = speedArr.reduce((a, b) => a + b, 0) / speedArr.length
+      if (avgSpeed > 0) {
+        lapTime = totalDist / (avgSpeed / 3.6) // m / (km/h → m/s)
+      }
+    }
+
     return {
       code,
       color: DRIVER_CHART_COLORS[i],
       name: code,
-      lapTime: fastest ? formatLapTime(fastest) : null,
-      delta: i === 0 ? 0 : null, // 后续计算
+      lapTime: lapTime ? formatLapTime(lapTime) : null,
+      delta: i === 0 ? 0 : null,
     }
   })
+})
+
+// 弯角最快段（来自 telemetry 接口的 corner_segments 字段）
+// 把 telemetry 接口返回的 corner_segments 传给 TrackLayer 用于赛道分段染色
+const cornerSegments = computed(() => {
+  return telemetryData.value?.corner_segments || []
+})
+
+// 车手 → 颜色映射（用于 TrackLayer 把每段染色为最快车手的车队色）
+const driverColorMap = computed(() => {
+  const map = {}
+  selectedDrivers.value.forEach((code, i) => {
+    map[code] = DRIVER_CHART_COLORS[i % DRIVER_CHART_COLORS.length]
+  })
+  return map
 })
 
 const layers = [
@@ -312,12 +346,18 @@ async function loadAll() {
   if (!round.value || selectedDrivers.value.length === 0) return
 
   loading.value = true
+  loadError.value = null
   layerStore.reset()
   hasData.value = false
 
+  // 清空旧数据
+  telemetryData.value = null
+  trackData.value = null
+  lapDistData.value = null
+  sectorData.value = null
+
   try {
     // 检测图层可用性
-    const is2026 = year.value === 2026
     layerStore.setAvailability({
       trackMap: true,
       speed: true,
@@ -332,6 +372,7 @@ async function loadAll() {
     const driversStr = selectedDrivers.value.join(',')
 
     const promises = []
+    const errors = []
 
     // 遥测数据
     promises.push(
@@ -341,55 +382,105 @@ async function loadAll() {
         drivers: driversStr,
         channels: channels.join(','),
         sessionType: sessionTypeForAPI(),
-      }).then(data => { telemetryData.value = data })
-        .catch(e => { console.error('遥测加载失败:', e) })
+      }).then(data => {
+        // 后端返回 {code, drivers, distances} 或 {code:500, msg}
+        if (data && data.code === 500) {
+          errors.push(`遥测: ${data.msg || '加载失败'}`)
+          layerStore.setAvailability({ speed: false, throttleBrake: false, delta: false })
+        } else if (data && data.drivers) {
+          telemetryData.value = data
+        } else if (data && data.telemetry) {
+          // 兼容旧格式
+          telemetryData.value = data
+        }
+      }).catch(e => {
+        errors.push(`遥测加载失败: ${e.message || e}`)
+        layerStore.setAvailability({ speed: false, throttleBrake: false, delta: false })
+      })
     )
 
     // 赛道地图
     if (layerStore.trackMap) {
       promises.push(
-        getTrackMap(year.value, round.value, sessionType.value === 'Q' ? 'Q' : 'R')
-          .then(data => { trackData.value = data })
-          .catch(e => { console.error('赛道图加载失败:', e); layerStore.setAvailability({ trackMap: false }) })
+        getTrackMap(year.value, round.value, sessionTypeForAPI())
+          .then(data => {
+            if (data && data.code === 500) {
+              errors.push(`赛道图: ${data.msg || '加载失败'}`)
+              layerStore.setAvailability({ trackMap: false })
+            } else if (data) {
+              trackData.value = data
+            }
+          })
+          .catch(e => {
+            errors.push(`赛道图加载失败: ${e.message || e}`)
+            layerStore.setAvailability({ trackMap: false })
+          })
       )
     }
 
     // 圈速分布
     if (layerStore.lapDistribution) {
       promises.push(
-        getLapDistribution(year.value, round.value, sessionType.value === 'Q' ? 'Q' : 'R')
-          .then(data => { lapDistData.value = data })
-          .catch(e => { console.error('圈速分布加载失败:', e); layerStore.setAvailability({ lapDistribution: false }) })
+        getLapDistribution(year.value, round.value, sessionTypeForAPI())
+          .then(data => {
+            if (data && data.code === 500) {
+              errors.push(`圈速分布: ${data.msg || '加载失败'}`)
+              layerStore.setAvailability({ lapDistribution: false })
+            } else if (data) {
+              lapDistData.value = data
+            }
+          })
+          .catch(e => {
+            errors.push(`圈速分布加载失败: ${e.message || e}`)
+            layerStore.setAvailability({ lapDistribution: false })
+          })
       )
     }
 
     // 分段最快
     if (layerStore.sectorFastest) {
       promises.push(
-        getSectorFastest(year.value, round.value, sessionType.value === 'Q' ? 'Q' : 'R')
-          .then(data => { sectorData.value = data })
-          .catch(e => { console.error('分段最快加载失败:', e); layerStore.setAvailability({ sectorFastest: false }) })
+        getSectorFastest(year.value, round.value, sessionTypeForAPI())
+          .then(data => {
+            if (data && data.code === 500) {
+              errors.push(`分段最快: ${data.msg || '加载失败'}`)
+              layerStore.setAvailability({ sectorFastest: false })
+            } else if (data) {
+              sectorData.value = data
+            }
+          })
+          .catch(e => {
+            errors.push(`分段最快加载失败: ${e.message || e}`)
+            layerStore.setAvailability({ sectorFastest: false })
+          })
       )
     }
 
     await Promise.allSettled(promises)
 
-    // 设置播放总时长
-    if (telemetryData.value?.telemetry) {
+    // 设置播放总时长（从遥测数据估算）
+    if (telemetryData.value?.drivers) {
       const firstDriver = selectedDrivers.value[0]
-      const driverData = telemetryData.value.telemetry[firstDriver]
-      if (driverData?.laps?.length) {
-        const fastestLap = driverData.laps.reduce((min, l) => {
-          const lt = parseFloat(l.LapTimeSeconds || l.lap_time)
-          return lt && (!min || lt < min) ? lt : min
-        }, null)
-        if (fastestLap) {
-          playerStore.setTotalTime(fastestLap)
+      const driverData = telemetryData.value.drivers[firstDriver]
+      if (driverData?.speed?.length && telemetryData.value.distances?.length) {
+        const totalDist = telemetryData.value.distances[telemetryData.value.distances.length - 1] - telemetryData.value.distances[0]
+        const avgSpeed = driverData.speed.reduce((a, b) => a + b, 0) / driverData.speed.length
+        if (avgSpeed > 0) {
+          playerStore.setTotalTime(totalDist / (avgSpeed / 3.6))
         }
       }
     }
 
-    hasData.value = true
+    // 判断是否有有效数据
+    const hasAnyData = telemetryData.value || trackData.value || lapDistData.value || sectorData.value
+    if (hasAnyData) {
+      hasData.value = true
+      if (errors.length > 0) {
+        loadError.value = errors.join('; ')
+      }
+    } else {
+      loadError.value = errors.join('; ') || '所有数据源加载失败'
+    }
   } finally {
     loading.value = false
   }
@@ -399,6 +490,14 @@ function sessionTypeForAPI() {
   // Q1/Q2/Q3 都映射到 Q
   if (['Q1', 'Q2', 'Q3'].includes(sessionType.value)) return 'Q'
   return sessionType.value
+}
+
+function loadDemoData() {
+  year.value = 2024
+  round.value = 1
+  selectedDrivers.value = ['VER', 'NOR']
+  sessionType.value = 'R'
+  loadAll()
 }
 
 function onSeek(val) {
@@ -474,9 +573,25 @@ onUnmounted(() => {
 
 .no-data-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
+  gap: 16px;
+}
+
+.load-error-msg {
+  color: var(--f1-red, #e10600);
+  font-size: 13px;
+  max-width: 500px;
+  text-align: center;
+  padding: 8px 16px;
+  background: rgba(225, 6, 0, 0.1);
+  border-radius: 6px;
+}
+
+.demo-btn {
+  margin-top: 8px;
 }
 
 .main-content {

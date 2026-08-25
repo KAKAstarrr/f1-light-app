@@ -5,7 +5,7 @@
 <template>
   <div class="race-overview">
     <InfoCard title="全年赛程" :subtitle="`${year} 赛季 · ${store.raceList.length} 站`">
-      <el-table :data="store.raceList" v-loading="loading" stripe>
+      <el-table :data="store.raceList" v-loading="loading" stripe :row-class-name="rowClass">
         <el-table-column prop="round" label="分站" width="70" align="center">
           <template #default="{ row }">
             <span class="round-num">R{{ row.round }}</span>
@@ -91,6 +91,11 @@ function getStatus(race) {
   return 'upcoming'
 }
 
+// 当前选中分站（FilterBar 下拉）行高亮
+function rowClass({ row }) {
+  return Number(props.round) && Number(row.round) === Number(props.round) ? 'selected-row' : ''
+}
+
 function viewDetail(row) {
   router.push(`/race-center?tab=detail&year=${props.year}&round=${row.round}`)
 }
@@ -122,5 +127,18 @@ function viewDetail(row) {
 .race-loc {
   font-size: 12px;
   color: var(--f1-text-muted);
+}
+
+/* 选中分站行高亮（需穿透 el-table 内部类） */
+:deep(.el-table .selected-row) {
+  background: rgba(229, 57, 53, 0.08);
+}
+
+:deep(.el-table .selected-row:hover > td.el-table__cell) {
+  background: rgba(229, 57, 53, 0.12) !important;
+}
+
+:deep(.el-table .selected-row td.el-table__cell) {
+  background: rgba(229, 57, 53, 0.08);
 }
 </style>

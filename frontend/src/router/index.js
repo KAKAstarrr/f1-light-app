@@ -43,6 +43,16 @@ const routes = [
     meta: { title: '车手投票' },
   },
 
+  // ========== 用户 ==========
+
+  // 登录 / 注册
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/pages/Login.vue'),
+    meta: { title: '登录' },
+  },
+
   // ========== 旧 URL 重定向（13 个 → 新入口）==========
 
   // 首页 → 赛事数据中心

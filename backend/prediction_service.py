@@ -6,15 +6,17 @@ prediction_service.py — AI 预测推理服务
     基于历史数据和当前状态，输出每位车手的夺冠概率分布。
 
 模型版本：
-    - xgb_v1：XGBoost 二分类模型（19 特征），离线训练，在线推理
+    - xgb_v2：XGBoost 二分类模型（24 特征，含天气/环境维度），离线训练，在线推理
+    - xgb_v1：XGBoost 二分类模型（19 特征），历史版本
     - rule_v1：规则加权模型（5 特征），作为 fallback
 
 推理流程：
-    1. 尝试加载 XGBoost 模型 (ml/models/xgb_v1.json)
+    1. 尝试加载 XGBoost 模型 (ml/models/xgb_v2.json)
     2. 从 Ergast API 获取实时数据（积分榜、排位赛、赛季结果）
     3. 从缓存 CSV 获取历史数据（赛道特定特征、跨赛季近 5 场）
-    4. 构建 19 特征向量 → model.predict_proba() → softmax 归一化
-    5. 如果任何步骤失败，降级到 rule_v1
+    4. 从 FastF1 获取该站正赛天气（干/湿、气温、降雨、湿度）
+    5. 构建 24 特征向量 → model.predict_proba() → softmax 归一化
+    6. 如果任何步骤失败，降级到 rule_v1
 
 SHAP 解释：
     如果 shap 库已安装，用 TreeExplainer 计算每位车手 top-3 特征贡献。
@@ -29,10 +31,29 @@ ERGAST_BASE = "https://api.jolpi.ca/ergast/f1"
 
 # ── 路径常量 ──────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
-MODEL_PATH = BASE_DIR / "ml" / "models" / "xgb_v1.json"
+MODEL_PATH = BASE_DIR / "ml" / "models" / "xgb_v2.json"
+MODEL_PATH_V1 = BASE_DIR / "ml" / "models" / "xgb_v1.json"  # 过渡期回退：v2 未重训时用 v1
 FEATURE_COLS_PATH = BASE_DIR / "ml" / "data" / "feature_columns.json"
 HISTORY_CSV = BASE_DIR / "ml" / "data" / "races_2018_2025.csv"
 EVAL_REPORT_PATH = BASE_DIR / "ml" / "models" / "eval_report.json"
+
+# ── 天气特征列（PRD 3.4.2 环境维度，场次级特征）──
+WEATHER_FEATURE_COLS = [
+    "weather_is_wet",
+    "weather_air_temp",
+    "weather_track_temp",
+    "weather_max_rainfall",
+    "weather_humidity",
+]
+
+# 天气缺失时的中性填充值（与训练侧 build_weather_dataset 一致）
+WEATHER_NEUTRAL = {
+    "weather_is_wet": 0.0,
+    "weather_air_temp": 20.0,
+    "weather_track_temp": 30.0,
+    "weather_max_rainfall": 0.0,
+    "weather_humidity": 60.0,
+}
 
 # ── 懒加载单例 ────────────────────────────────────────
 _xgb_model = None
@@ -47,16 +68,20 @@ _feature_importance = None
 # ═══════════════════════════════════════════════════════
 
 def _get_xgb_model():
-    """加载 XGBoost 模型。失败返回 None。"""
+    """加载 XGBoost 模型。优先 xgb_v2（24 特征），重训前回退 xgb_v1（19 特征）。失败返回 None。"""
     global _xgb_model
     if _xgb_model is None:
         try:
             import xgboost as xgb
-            if not MODEL_PATH.exists():
+            path = (
+                MODEL_PATH if MODEL_PATH.exists()
+                else (MODEL_PATH_V1 if MODEL_PATH_V1.exists() else None)
+            )
+            if path is None:
                 return None
             _xgb_model = xgb.XGBClassifier()
-            _xgb_model.load_model(str(MODEL_PATH))
-            print("[prediction] XGBoost 模型加载成功")
+            _xgb_model.load_model(str(path))
+            print(f"[prediction] XGBoost 模型加载成功: {path.name}")
         except Exception as e:
             print(f"[prediction] XGBoost 模型加载失败: {e}")
             return None
@@ -382,6 +407,46 @@ def _predict_with_rule_v1(
 # XGBoost 在线推理
 # ═══════════════════════════════════════════════════════
 
+def _fetch_weather_features(year: int, round_num: int) -> Optional[dict]:
+    """拉取该站正赛天气汇总并转成特征 dict。
+
+    复用 data_source.fetch_fastf1_weather（FastF1 weather_data，仅 2018+）。
+    失败/数据缺失时返回 None，由 _build_xgb_features 用中性值兜底（不阻塞预测）。
+
+    返回形如：
+        {
+            "weather_is_wet": 1.0,
+            "weather_air_temp": 18.5,
+            "weather_track_temp": 31.2,
+            "weather_max_rainfall": 2.4,
+            "weather_humidity": 78.0,
+        }
+    """
+    try:
+        # 兼容两种启动方式：uvicorn（cwd=项目根，backend 为包）与 cd backend 直跑
+        try:
+            from backend.data_source import fetch_fastf1_weather
+        except ImportError:
+            from data_source import fetch_fastf1_weather
+        res = fetch_fastf1_weather(year, round_num, "R")
+        if res.get("code") != 200:
+            return None
+        s = res.get("weather_summary") or {}
+        # 完全无数据（weather_timeline 空或 summary 全空）→ 视为缺失
+        if not s or ("avg_air_temp" not in s and "is_wet" not in s):
+            return None
+        return {
+            "weather_is_wet": float(1 if s.get("is_wet") else 0),
+            "weather_air_temp": float(s.get("avg_air_temp") if s.get("avg_air_temp") is not None else 20.0),
+            "weather_track_temp": float(s.get("avg_track_temp") if s.get("avg_track_temp") is not None else 30.0),
+            "weather_max_rainfall": float(s.get("max_rainfall") if s.get("max_rainfall") is not None else 0.0),
+            "weather_humidity": float(s.get("avg_humidity") if s.get("avg_humidity") is not None else 60.0),
+        }
+    except Exception as e:
+        print(f"[prediction] 天气特征获取失败（使用中性值兜底）: {e}")
+        return None
+
+
 def _build_xgb_features(
     year: int,
     round_num: int,
@@ -390,10 +455,12 @@ def _build_xgb_features(
     season_results: list,
     schedule_info: dict,
     history_df,
+    weather_features: Optional[dict] = None,
 ) -> list:
-    """为每位车手构建 19 特征向量（与训练特征完全对齐）。
+    """为每位车手构建 24 特征向量（与训练特征完全对齐）。
 
     核心原则：每行特征只用该轮次【之前】的数据，严禁泄漏。
+    weather_features 为场次级特征（同场所有车手相同），缺失时中性值兜底。
     """
     feature_cols = _get_feature_cols()
     if not feature_cols:
@@ -524,6 +591,9 @@ def _build_xgb_features(
         regulation_era = 1 if year >= 2022 else 0
         round_normalized = round(round_num / total_rounds, 4) if total_rounds > 0 else 0
 
+        # ── 环境/天气特征 (5 个，场次级，全部车手相同) ──
+        wf = weather_features or {}
+
         # 组装特征字典
         features = {
             "qualifying_pos": float(qualifying_pos),
@@ -545,6 +615,11 @@ def _build_xgb_features(
             "constructor_season_dnfs_before": float(constructor_dnfs),
             "regulation_era": float(regulation_era),
             "round_normalized": float(round_normalized),
+            "weather_is_wet": wf.get("weather_is_wet", WEATHER_NEUTRAL["weather_is_wet"]),
+            "weather_air_temp": wf.get("weather_air_temp", WEATHER_NEUTRAL["weather_air_temp"]),
+            "weather_track_temp": wf.get("weather_track_temp", WEATHER_NEUTRAL["weather_track_temp"]),
+            "weather_max_rainfall": wf.get("weather_max_rainfall", WEATHER_NEUTRAL["weather_max_rainfall"]),
+            "weather_humidity": wf.get("weather_humidity", WEATHER_NEUTRAL["weather_humidity"]),
         }
 
         all_features.append({
@@ -654,7 +729,7 @@ def _predict_with_xgb(features_list: list) -> tuple:
 def predict_race(year: int, round_num: int) -> dict:
     """预测指定分站的夺冠概率分布。
 
-    优先使用 XGBoost (xgb_v1)，失败时降级到规则加权 (rule_v1)。
+    优先使用 XGBoost (xgb_v2，24 特征含天气)，失败时降级到规则加权 (rule_v1)。
 
     参数：
         year: 赛季年份
@@ -665,8 +740,8 @@ def predict_race(year: int, round_num: int) -> dict:
             "code": 200,
             "season": 2025,
             "round": 5,
-            "model_version": "xgb_v1" | "rule_v1" | "rule_v1_fallback",
-            "feature_count": 19 | 5,
+            "model_version": "xgb_v2" | "xgb_v1" | "rule_v1" | "rule_v1_fallback",
+            "feature_count": 24 | 19 | 5,
             "feature_importance": [...],   # XGBoost only
             "predictions": [
                 {
@@ -675,7 +750,7 @@ def predict_race(year: int, round_num: int) -> dict:
                     "constructor": "Red Bull",
                     "probability": 0.35,
                     "rank_pred": 1,
-                    "features": {...},
+                    "features": {...24 个特征，含 weather_*},
                     "model_proba": 0.82,     # XGBoost only
                     "shap_top3": [...]        # XGBoost only
                 }, ...
@@ -705,9 +780,13 @@ def predict_race(year: int, round_num: int) -> dict:
                 season_results = _fetch_all_season_results(year)
                 history_df = _get_history_df()
 
+                # 环境/天气特征（场次级，缺失时内部中性值兜底）
+                weather_features = _fetch_weather_features(year, round_num)
+
                 features_list = _build_xgb_features(
                     year, round_num, standings, qualifying,
                     season_results, schedule_info, history_df,
+                    weather_features,
                 )
 
                 if not features_list:
@@ -746,11 +825,12 @@ def predict_race(year: int, round_num: int) -> dict:
                     "code": 200,
                     "season": year,
                     "round": round_num,
-                    "model_version": "xgb_v1",
+                    "model_version": "xgb_v2" if len(feature_cols) >= 24 else "xgb_v1",
                     "feature_count": len(feature_cols),
                     "feature_importance": _get_feature_importance(),
                     "predictions": scored,
                     "top3": top3,
+                    "weather": weather_features,
                 }
                 print(f"[prediction] XGBoost 推理成功: {len(scored)} 位车手, top3={top3}")
                 return result

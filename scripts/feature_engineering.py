@@ -21,6 +21,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE / "ml" / "data"
 RAW_CSV = DATA_DIR / "races_2018_2025.csv"
+WEATHER_CSV = DATA_DIR / "weather_cache.csv"
 OUT_CSV = DATA_DIR / "features_train.csv"
 OUT_COLS = DATA_DIR / "feature_columns.json"
 
@@ -254,6 +255,54 @@ def add_context_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ──────────────────────────────────────────────────────
+# 5.5 环境/天气特征（场次级，来自 weather_cache.csv）
+# ──────────────────────────────────────────────────────
+def add_weather_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    合并该场正赛天气汇总（is_wet/气温/赛道温度/降雨/湿度）。
+    场次级特征：同场所有车手取值相同。
+    缺失场次已在 build_weather_dataset.py 中填中性值，这里只做防御性合并。
+    """
+    if not WEATHER_CSV.exists():
+        print("[天气特征] ⚠️ weather_cache.csv 不存在，跳过（请先运行 build_weather_dataset.py）")
+        return df
+
+    weather = pd.read_csv(WEATHER_CSV)
+    weather_cols = [
+        "weather_is_wet",
+        "weather_air_temp",
+        "weather_track_temp",
+        "weather_max_rainfall",
+        "weather_humidity",
+    ]
+    missing = [c for c in weather_cols if c not in weather.columns]
+    if missing:
+        print(f"[天气特征] ⚠️ weather_cache.csv 缺少列 {missing}，跳过合并")
+        return df
+
+    # 按 (year, round) 合并
+    merge_keys = ["year", "round"]
+    df = df.merge(weather[merge_keys + weather_cols], on=merge_keys, how="left")
+
+    # 防御性填充：未匹配上的行用中性值（干地典型）
+    neutral = {
+        "weather_is_wet": 0.0,
+        "weather_air_temp": 20.0,
+        "weather_track_temp": 30.0,
+        "weather_max_rainfall": 0.0,
+        "weather_humidity": 60.0,
+    }
+    for col in weather_cols:
+        if df[col].isnull().any():
+            n = df[col].isnull().sum()
+            df[col] = df[col].fillna(neutral[col])
+            print(f"  [天气兜底] {col}: 填充 {n} 行")
+
+    print(f"[天气特征] 完成 5 个 weather_* 特征（共 {len(weather)} 场天气记录）")
+    return df
+
+
+# ──────────────────────────────────────────────────────
 # 6. NaN 填充 & 最终特征矩阵
 # ──────────────────────────────────────────────────────
 def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
@@ -292,6 +341,13 @@ def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
         "context": [
             "regulation_era",
             "round_normalized",
+        ],
+        "weather": [
+            "weather_is_wet",
+            "weather_air_temp",
+            "weather_track_temp",
+            "weather_max_rainfall",
+            "weather_humidity",
         ],
     }
 
@@ -343,6 +399,20 @@ def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
             result[col] = result[col].fillna(median_val)
             print(f"  [填中位数] {col}: 填充 {n_nan} 个 NaN (median={median_val:.2f})")
 
+    # 天气特征防御性填充（正常由 add_weather_features 完成）
+    weather_fill = {
+        "weather_is_wet": 0.0,
+        "weather_air_temp": 20.0,
+        "weather_track_temp": 30.0,
+        "weather_max_rainfall": 0.0,
+        "weather_humidity": 60.0,
+    }
+    for col, val in weather_fill.items():
+        if col in result.columns and result[col].isnull().any():
+            n_nan = result[col].isnull().sum()
+            result[col] = result[col].fillna(val)
+            print(f"  [天气兜底] {col}: 填充 {n_nan} 个 NaN")
+
     # ── 数据类型转换 ──
     for col in all_features:
         result[col] = result[col].astype(float)
@@ -382,6 +452,7 @@ def main():
     df = add_circuit_features(df)
     df = add_constructor_features(df)
     df = add_context_features(df)
+    df = add_weather_features(df)
 
     # 3. 构建最终特征矩阵
     result = build_feature_matrix(df)

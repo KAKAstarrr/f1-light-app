@@ -6,6 +6,7 @@ from datetime import datetime
 
 import requests
 import secrets
+import json
 
 # Ergast 基础域名
 ERGAST_BASE_URL = "https://api.jolpi.ca/ergast/f1"
@@ -227,10 +228,162 @@ def get_me(user: models.User = Depends(auth.get_current_user)):
 # ============================================================
 # 模块 3B：AI 预测
 # ============================================================
-@app.get("/api/prediction/{year}/{round}", summary="AI 夺冠概率预测")
-def get_prediction(year: int, round: int):
+
+def _prediction_from_db(db: Session, season: int, round_num: int) -> Optional[dict]:
+    """从 predictions 表读取某站预测记录，组装成与 predict_race 一致的结构。
+
+    返回 None 表示无记录。features_json 中存的是完整车手条目
+    （含 features/SHAP/概率等快照），可完整还原详情视图。
+    """
+    rows = (
+        db.query(models.Prediction)
+        .filter(models.Prediction.season == season, models.Prediction.round == round_num)
+        .order_by(models.Prediction.rank_pred)
+        .all()
+    )
+    if not rows:
+        return None
+
+    predictions = []
+    feature_count = None
+    for row in rows:
+        try:
+            entry = json.loads(row.features_json) if row.features_json else {}
+        except Exception:
+            entry = {}
+        entry.setdefault("driver_code", row.driver_code)
+        entry["probability"] = row.probability
+        entry["rank_pred"] = row.rank_pred
+        if entry.get("feature_count") is not None:
+            feature_count = entry["feature_count"]
+        predictions.append(entry)
+
+    # 顶层 weather：从第一条记录的特征快照提取 weather_*（兼容 19 特征旧记录 → None）
+    weather = None
+    if predictions:
+        first_features = predictions[0].get("features") or {}
+        weather_keys = [k for k in first_features if k.startswith("weather_")]
+        if weather_keys:
+            weather = {k: first_features[k] for k in weather_keys}
+
+    return {
+        "code": 200,
+        "season": season,
+        "round": round_num,
+        "model_version": rows[0].model_version or "rule_v1",
+        "source": rows[0].source or "live",
+        "from_db": True,
+        "created_at": rows[0].created_at.isoformat() if rows[0].created_at else None,
+        "feature_count": feature_count,
+        "predictions": predictions,
+        "top3": [p["driver_code"] for p in predictions[:3]],
+        "weather": weather,
+    }
+
+
+def _save_prediction(db: Session, result: dict, source: str = "live") -> None:
+    """将 predict_race 结果按 (season, round, driver_code) upsert 到 predictions 表。
+
+    先查后插/更新：SQLite/PostgreSQL 通用，避免唯一约束冲突。
+    features_json 保存完整车手条目快照，供历史详情回看。
+    """
+    season = result.get("season")
+    round_num = result.get("round")
+    model_version = result.get("model_version", "rule_v1")
+    feature_count = result.get("feature_count")
+
+    for p in result.get("predictions", []):
+        row = (
+            db.query(models.Prediction)
+            .filter(
+                models.Prediction.season == season,
+                models.Prediction.round == round_num,
+                models.Prediction.driver_code == p["driver_code"],
+            )
+            .first()
+        )
+        snapshot = dict(p)
+        snapshot["feature_count"] = feature_count
+        json_str = json.dumps(snapshot, ensure_ascii=False, default=str)
+
+        if not row:
+            db.add(models.Prediction(
+                season=season,
+                round=round_num,
+                driver_code=p["driver_code"],
+                probability=p["probability"],
+                rank_pred=p["rank_pred"],
+                model_version=model_version,
+                features_json=json_str,
+                source=source,
+            ))
+        else:
+            row.probability = p["probability"]
+            row.rank_pred = p["rank_pred"]
+            row.model_version = model_version
+            row.features_json = json_str
+            row.source = source
+
+    db.commit()
+
+
+@app.get("/api/prediction/{year}/{round}", summary="AI 夺冠概率预测（含历史记录读取）")
+def get_prediction(
+    year: int,
+    round: int,
+    save: bool = Query(False, description="无历史记录时是否计算并保存到历史库"),
+    db: Session = Depends(get_db),
+):
+    # 1. 优先读历史库：有记录直接返回（与回填/历史数据一致，且快）
+    cached = _prediction_from_db(db, year, round)
+    if cached:
+        return cached
+
+    # 2. 无记录 → 现场计算；save=True 时落库
     result = prediction_service.predict_race(year, round)
+    if result.get("code") == 200 and save:
+        try:
+            _save_prediction(db, result, source="live")
+        except Exception as e:
+            print(f"[prediction] 预测落库失败: {e}")
     return result
+
+
+@app.get("/api/prediction/history", summary="赛季预测历史（各站 Top3 摘要）")
+def get_prediction_history(
+    season: int = Query(..., description="赛季年份"),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(models.Prediction)
+        .filter(models.Prediction.season == season)
+        .order_by(models.Prediction.round, models.Prediction.rank_pred)
+        .all()
+    )
+
+    rounds_map = {}
+    for row in rows:
+        info = rounds_map.setdefault(row.round, {
+            "round": row.round,
+            "model_version": row.model_version or "rule_v1",
+            "source": row.source or "live",
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "driver_count": 0,
+            "top3": [],
+        })
+        info["driver_count"] += 1
+        if len(info["top3"]) < 3:
+            info["top3"].append({
+                "driver_code": row.driver_code,
+                "probability": row.probability,
+                "rank_pred": row.rank_pred,
+            })
+
+    return {
+        "code": 200,
+        "season": season,
+        "rounds": sorted(rounds_map.values(), key=lambda x: x["round"]),
+    }
 
 
 # ============================================================

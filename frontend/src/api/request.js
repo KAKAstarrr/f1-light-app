@@ -82,6 +82,22 @@ service.interceptors.response.use(
     } else if (error.response) {
       const status = error.response.status
       const detail = error.response.data?.detail || '服务器异常'
+      // 401 统一处理：token 失效 → 清 token + 跳登录页（可选登录策略，静默请求不打扰）
+      if (status === 401) {
+        const url = error.config?.url || ''
+        const isAuthCall = url.includes('/api/auth/')
+        if (!isAuthCall && !location.pathname.startsWith('/login')) {
+          localStorage.removeItem('f1_token')
+          ElMessage.error('登录已过期，请重新登录')
+          import('@/router').then(({ default: router }) => {
+            router.push({ path: '/login', query: { redirect: location.pathname + location.search } })
+          })
+          return Promise.reject(error)
+        }
+        if (!isAuthCall) {
+          localStorage.removeItem('f1_token')
+        }
+      }
       ElMessage.error(`[${status}] ${detail}`)
     } else {
       ElMessage.error('网络错误或服务器未启动')

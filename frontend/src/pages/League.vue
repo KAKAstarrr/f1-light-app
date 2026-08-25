@@ -75,13 +75,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useF1Store } from '@/stores/f1'
+import { useUserStore } from '@/stores/user'
 import * as fantasyApi from '@/api/fantasy'
 import { ElMessage } from 'element-plus'
 
 const store = useF1Store()
-const token = ref(localStorage.getItem('f1_token') || '')
+const userStore = useUserStore()
+const token = computed(() => userStore.token)
 const newLeagueName = ref('')
 const joinLeagueId = ref('')
 const joinInviteCode = ref('')

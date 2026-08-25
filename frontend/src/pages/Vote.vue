@@ -96,16 +96,18 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useF1Store } from '@/stores/f1'
+import { useUserStore } from '@/stores/user'
 import { useNextRace } from '@/composables/useNextRace'
 import { getDriverStandings } from '@/api/driver'
 import * as voteApi from '@/api/vote'
 import { ElMessage } from 'element-plus'
 
 const store = useF1Store()
+const userStore = useUserStore()
 const { ongoingRace, lastCompletedRace } = useNextRace()
 
 const loadingRaces = ref(true)
-const token = ref(localStorage.getItem('f1_token') || '')
+const token = computed(() => userStore.token)
 const selectedDriver = ref('')
 const voting = ref(false)
 const loadingResults = ref(false)

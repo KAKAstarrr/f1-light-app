@@ -39,7 +39,7 @@ f1_light_app/
 │   ├── schemas.py              # Pydantic 请求/响应模型
 │   ├── auth.py                 # JWT 鉴权（bcrypt 哈希 + Token 签发/校验）
 │   ├── game_service.py         # Fantasy 积分规则 + 动态定价
-│   ├── prediction_service.py   # AI 预测（规则加权模型）
+│   ├── prediction_service.py   # AI 预测（XGBoost v2 24 特征含天气，降级规则模型）
 │   └── streamlit_app.py        # Streamlit 快速原型看板
 │
 ├── frontend/
@@ -65,7 +65,8 @@ f1_light_app/
 │   │   │   │   ├── SpeedOverlay.vue # 速度叠加对比
 │   │   │   │   └── TrackMap.vue    # 赛道地图 SVG
 │   │   │   ├── TelemetryCockpit.vue # 遥测大屏（6 图层联动）
-│   │   │   ├── Prediction.vue  #   AI 夺冠概率预测
+│   │   │   ├── Prediction.vue  #   AI 预测（分站选择 + 历史回看）
+│   │   │   ├── Login.vue       #   登录/注册页
 │   │   │   ├── FantasyTeam.vue #   Fantasy 阵容管理（含芯片/历史）
 │   │   │   ├── League.vue      #   Fantasy 联盟管理
 │   │   │   ├── Vote.vue        #   最佳车手投票
@@ -73,9 +74,12 @@ f1_light_app/
 │   │   ├── components/         # 可复用组件
 │   │   ├── composables/        # 组合式函数
 │   │   ├── stores/
-│   │   │   └── f1.js           #   Pinia 全局状态
+│   │   │   ├── f1.js           #   Pinia 全局状态（赛事数据）
+│   │   │   ├── user.js         #   用户状态（token/登录/退出）
+│   │   │   ├── player.js       #   遥测回放播放状态
+│   │   │   └── layer.js        #   遥测图层开关
 │   │   ├── router/
-│   │   │   └── index.js        #   路由配置 + 导航守卫
+│   │   │   └── index.js        #   路由配置（懒加载 + /login）
 │   │   ├── utils/              # 工具函数
 │   │   ├── assets/             # 静态资源
 │   │   ├── App.vue             # 根组件（布局外壳）
@@ -172,10 +176,11 @@ f1_light_app/
 | POST | `/api/auth/login` | 用户登录（返回 JWT） | 无 |
 | GET | `/api/auth/me` | 获取当前用户信息 | Bearer Token |
 
-### 3B AI 预测（1 个）
+### 3B AI 预测（2 个）
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/prediction/{year}/{round}` | AI 夺冠概率预测（规则加权模型） |
+| GET | `/api/prediction/{year}/{round}` | AI 夺冠概率预测（XGBoost v2，24 特征含天气；重训前自动回退 v1，失败降级规则模型；无历史记录时 `?save=true` 计算并落库） |
+| GET | `/api/prediction/history?season=` | 赛季预测历史（各站 Top3 摘要 + 模型版本 + 回算标记） |
 
 ### 3C Fantasy（11 个）
 | 方法 | 路径 | 说明 | 认证 |
@@ -219,11 +224,12 @@ f1_light_app/
 | 圈速分布 | `/lap-distribution` | 箱线图 + 异常值散点 + 统计明细 |
 | 速度叠加 | `/speed-overlay` | 多车手速度叠加对比（numpy.interp 统一网格） |
 | 赛道地图 | `/track-map` | SVG 赛道轮廓 + 分段着色（Purple/Green/Yellow） |
-| 遥测大屏 | `/telemetry-cockpit` | 6 图层联动（速度/油门刹车/Delta/赛道染色/分段/分布） |
-| AI 预测 | `/prediction` | 夺冠概率 Top3 卡片 + ECharts 柱状图 |
+| 遥测大屏 | `/telemetry` | 6 图层联动（速度/油门刹车/Delta/赛道染色/分段/分布） |
+| AI 预测 | `/prediction` | 夺冠概率 Top3 卡片 + ECharts 柱状图 + SHAP/特征解释 + **分站选择器（可回看任意一站）+ 本赛季预测历史** |
 | Fantasy | `/fantasy` | 车手/车队选择 + 预算追踪 + 队长/芯片 + 历史记录 + 排行榜 |
 | Fantasy 联盟 | `/league` | 创建/加入联盟 + 邀请码 + 联盟排行榜 |
 | 投票 | `/vote` | 最佳车手投票 + 投票结果条形图 |
+| 登录 / 注册 | `/login` | 独立登录页（导航栏入口，可选登录，登录后导航栏显示用户菜单） |
 | 404 | `/*` | 兜底页 |
 
 ---
@@ -337,6 +343,7 @@ npm run dev                                        # http://127.0.0.1:5173
 ## 九、后续迭代方向
 
 - [x] XGBoost 替代规则加权模型（完成于 2026-08-14，Top-1 41.67% vs 33.33%）
+- [x] 天气维度入模型：xgb_v2（24 特征 = 原 19 + 干湿/气温/赛道温度/降雨/湿度），前端按 7 组特征维度折叠展示 + 天气摘要栏（完成于 2026-08-25，指标对比见 ml/models/eval_report.json）
 - [x] Windows 端口残留 500 修复 + 自愈脚本（完成于 2026-08-14）
 - [ ] 单元测试覆盖（pytest）
 - [ ] WebSocket 实时通知（Fantasy 结算后推送）

@@ -18,7 +18,12 @@
     "constructor_season_avg_pos_before",
     "constructor_season_dnfs_before",
     "regulation_era",
-    "round_normalized"
+    "round_normalized",
+    "weather_is_wet",
+    "weather_air_temp",
+    "weather_track_temp",
+    "weather_max_rainfall",
+    "weather_humidity"
   ],
   "feature_groups": {
     "baseline": [
@@ -51,6 +56,13 @@
     "context": [
       "regulation_era",
       "round_normalized"
+    ],
+    "weather": [
+      "weather_is_wet",
+      "weather_air_temp",
+      "weather_track_temp",
+      "weather_max_rainfall",
+      "weather_humidity"
     ]
   },
   "label_column": "is_win",

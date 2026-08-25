@@ -16,13 +16,15 @@ F1 XGBoost 预测模型 — 模型训练脚本
   - NDCG@3（排序质量）
 
 产出：
-  - ml/models/xgb_v1.json          （XGBoost 模型）
+  - ml/models/xgb_v2.json          （XGBoost 模型，24 特征含天气）
   - ml/models/feature_importance.csv（特征重要性）
   - ml/models/eval_report.json      （评估报告）
 
-运行：python scripts/train_xgboost.py
+运行：python scripts/train_xgboost.py [--version v2]
+      可选 --version 覆盖模型版本号（默认 xgb_v2，可传 xgb_v1 复现旧模型）
 """
 
+import argparse
 import json
 import pickle
 import numpy as np
@@ -38,7 +40,7 @@ MODEL_DIR = BASE / "ml" / "models"
 FEATURES_CSV = DATA_DIR / "features_train.csv"
 FEATURE_COLS_JSON = DATA_DIR / "feature_columns.json"
 
-MODEL_PATH = MODEL_DIR / "xgb_v1.json"
+MODEL_PATH = MODEL_DIR / "xgb_v2.json"
 IMPORTANCE_PATH = MODEL_DIR / "feature_importance.csv"
 REPORT_PATH = MODEL_DIR / "eval_report.json"
 
@@ -302,8 +304,8 @@ def main():
 
     # 测试集预测
     y_prob_xgb = model.predict_proba(X_test)[:, 1]
-    xgb_eval = full_evaluate(y_test, y_prob_xgb, test_df, "xgb_v1")
-    print(f"\n[XGBoost xgb_v1] 测试集 (2025, {xgb_eval['total_races']} 场):")
+    xgb_eval = full_evaluate(y_test, y_prob_xgb, test_df, "xgb_v2")
+    print(f"\n[XGBoost xgb_v2] 测试集 (2025, {xgb_eval['total_races']} 场):")
     for k, v in xgb_eval.items():
         if k not in ("model", "total_races"):
             print(f"  {k:20s}: {v}")
@@ -321,7 +323,7 @@ def main():
     print("\n" + "=" * 60)
     print("模型对比 (2025 测试集)")
     print("=" * 60)
-    print(f"{'指标':20s} {'rule_v1':>10s} {'xgb_v1':>10s} {'差异':>10s}")
+    print(f"{'指标':20s} {'rule_v1':>10s} {'xgb_v2':>10s} {'差异':>10s}")
     print("-" * 52)
     for metric in ["log_loss", "brier_score", "top1_accuracy", "top3_hit_rate", "ndcg_at_3"]:
         r_val = rule_eval[metric]
@@ -356,7 +358,7 @@ def main():
 
     # 9. 保存评估报告
     report = {
-        "model_version": "xgb_v1",
+        "model_version": "xgb_v2",
         "train_years": "2018-2023",
         "val_year": 2024,
         "test_year": 2025,

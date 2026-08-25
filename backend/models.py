@@ -136,6 +136,7 @@ class Prediction(Base):
     rank_pred = Column(Integer, nullable=False)  # 预测排名
     model_version = Column(String(20), default="rule_v1")
     features_json = Column(Text)  # 特征快照
+    source = Column(String(10), default="live")  # live=在线查询生成 / backfill=回填补算
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (

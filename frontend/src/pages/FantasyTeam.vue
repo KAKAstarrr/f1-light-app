@@ -19,42 +19,20 @@
       </el-empty>
     </el-card>
 
-    <!-- 未登录时显示登录/注册 -->
-    <el-card v-if="upcomingRace && !token" shadow="never" class="block">
-      <el-alert title="请先登录或注册后使用 Fantasy 功能" type="warning" :closable="false" />
-      <div class="auth-form">
-        <el-tabs v-model="authTab">
-          <el-tab-pane label="登录" name="login">
-            <el-form label-width="80px" @submit.prevent="doLogin">
-              <el-form-item label="用户名">
-                <el-input v-model="loginForm.username" placeholder="用户名或邮箱" />
-              </el-form-item>
-              <el-form-item label="密码">
-                <el-input v-model="loginForm.password" type="password" show-password />
-              </el-form-item>
-              <el-button type="primary" @click="doLogin" :loading="authLoading">登录</el-button>
-            </el-form>
-          </el-tab-pane>
-          <el-tab-pane label="注册" name="register">
-            <el-form label-width="80px" @submit.prevent="doRegister">
-              <el-form-item label="用户名">
-                <el-input v-model="regForm.username" placeholder="至少3位" />
-              </el-form-item>
-              <el-form-item label="邮箱">
-                <el-input v-model="regForm.email" />
-              </el-form-item>
-              <el-form-item label="密码">
-                <el-input v-model="regForm.password" type="password" show-password placeholder="至少6位" />
-              </el-form-item>
-              <el-button type="primary" @click="doRegister" :loading="authLoading">注册</el-button>
-            </el-form>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
+    <!-- 未登录时显示登录引导 -->
+    <el-card v-if="upcomingRace && !userStore.isLoggedIn" shadow="never" class="block">
+      <el-empty description="登录后管理 Fantasy 阵容">
+        <template #description>
+          <p>登录 / 注册后可保存阵容、使用芯片、查看历史记录</p>
+          <el-button type="primary" round style="margin-top: 12px" @click="router.push('/login')">
+            去登录 / 注册
+          </el-button>
+        </template>
+      </el-empty>
     </el-card>
 
     <!-- 已登录 + 有 upcoming：阵容管理 -->
-    <template v-if="upcomingRace && token">
+    <template v-if="upcomingRace && userStore.isLoggedIn">
       <el-card shadow="never" class="block">
         <template #header>
           <div class="card-header">
@@ -213,15 +191,18 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useF1Store } from '@/stores/f1'
+import { useUserStore } from '@/stores/user'
 import { useNextRace } from '@/composables/useNextRace'
 import { getDriverStandings, getConstructorStandings } from '@/api/driver'
-import * as authApi from '@/api/auth'
 import * as fantasyApi from '@/api/fantasy'
 import { ElMessage } from 'element-plus'
 import { rankTagType } from '@/utils/f1-constants'
 
 const store = useF1Store()
+const router = useRouter()
+const userStore = useUserStore()
 const { upcomingRace } = useNextRace()
 
 const loadingRaces = ref(true)
@@ -229,59 +210,6 @@ const loadingRaces = ref(true)
 // 从 upcomingRace 派生 year 和 round（与 Prediction 完全独立）
 const year = computed(() => Number(upcomingRace.value?.season) || store.currentSeason)
 const round = computed(() => Number(upcomingRace.value?.round) || null)
-
-// 鉴权
-const token = ref(localStorage.getItem('f1_token') || '')
-const authTab = ref('login')
-const authLoading = ref(false)
-const loginForm = ref({ username: '', password: '' })
-const regForm = ref({ username: '', email: '', password: '' })
-
-const doLogin = async () => {
-  // 前端校验：避免空表单打后端（后端会返回 422）
-  if (!loginForm.value.username.trim()) {
-    ElMessage.error('请输入用户名或邮箱')
-    return
-  }
-  if (!loginForm.value.password) {
-    ElMessage.error('请输入密码')
-    return
-  }
-  authLoading.value = true
-  try {
-    const res = await authApi.login(loginForm.value)
-    token.value = res.access_token
-    localStorage.setItem('f1_token', res.access_token)
-    ElMessage.success('登录成功')
-    loadExisting()
-  } catch { /* 拦截器已弹错误 */ }
-  authLoading.value = false
-}
-
-const doRegister = async () => {
-  // 前端校验：与后端 UserRegister schema 规则保持一致，避免 422
-  if (!regForm.value.username || regForm.value.username.trim().length < 3) {
-    ElMessage.error('用户名至少 3 位')
-    return
-  }
-  if (!regForm.value.email || !regForm.value.email.includes('@') || !regForm.value.email.includes('.')) {
-    ElMessage.error('请输入正确的邮箱地址')
-    return
-  }
-  if (!regForm.value.password || regForm.value.password.length < 6) {
-    ElMessage.error('密码至少 6 位')
-    return
-  }
-  authLoading.value = true
-  try {
-    const res = await authApi.register(regForm.value)
-    token.value = res.access_token
-    localStorage.setItem('f1_token', res.access_token)
-    ElMessage.success('注册成功')
-    loadExisting()
-  } catch {}
-  authLoading.value = false
-}
 
 // 车手/车队列表
 const driverList = ref([])
@@ -399,7 +327,7 @@ const saveTeam = async () => {
 }
 
 const loadExisting = async () => {
-  if (!round.value || !token.value) return
+  if (!round.value || !userStore.isLoggedIn) return
   try {
     const data = await fantasyApi.getMyTeam(year.value, round.value)
     selectedDrivers.value = (data.drivers || []).map(d => ({
@@ -428,7 +356,7 @@ const loadLeaderboard = async () => {
 }
 
 const loadChipStatus = async () => {
-  if (!token.value) return
+  if (!userStore.isLoggedIn) return
   try {
     const data = await fantasyApi.getChipStatus(year.value)
     chipStatus.value = {
@@ -456,7 +384,7 @@ onMounted(async () => {
   await loadConstructorList()
   // 排行榜始终加载（即使无 upcoming）
   loadLeaderboard()
-  if (upcomingRace.value && token.value) {
+  if (upcomingRace.value && userStore.isLoggedIn) {
     loadExisting()
     loadChipStatus()
   }
@@ -478,7 +406,6 @@ onMounted(async () => {
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .budget-info { display: flex; align-items: center; gap: 6px; }
 .budget-info .over { color: #f56c6c; }
-.auth-form { margin-top: 16px; }
 .driver-grid { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
 .driver-card {
   width: 140px; padding: 10px; border: 2px solid #ddd; border-radius: 8px;
